@@ -34,17 +34,23 @@ GitHubユーザーネームを入力するだけで、全公開レポジトリ�
 
 ## 🛠️ 環境構築・起動方法
 
+### 前提条件
+- **Node.js**: v18.0.0 以上 (Vite 8 の動作要件)
+- **npm**: v9.0.0 以上
+
+---
+
 ### 1. 依存パッケージのインストール
-プロジェクトのルートディレクトリで以下を実行します。
+プロジェクトのルートディレクトリで以下を実行し、依存パッケージをインストールします。
 ```bash
 npm install
 ```
 
 ### 2. 環境変数の設定
-ルートディレクトリに `.env` ファイルを作成し、各種APIキーや構成情報を記述します。
+ルートディレクトリに `.env` ファイルを作成（または `.env.example` からコピー）し、各種APIキーや構成情報を記述します。
 
 ```env
-# Firebase Configuration
+# Firebase Configuration (Firebase Console > プロジェクト設定 から取得)
 VITE_FIREBASE_API_KEY="YOUR_FIREBASE_API_KEY"
 VITE_FIREBASE_AUTH_DOMAIN="YOUR_FIREBASE_AUTH_DOMAIN"
 VITE_FIREBASE_PROJECT_ID="YOUR_FIREBASE_PROJECT_ID"
@@ -53,20 +59,54 @@ VITE_FIREBASE_MESSAGING_SENDER_ID="YOUR_FIREBASE_MESSAGING_SENDER_ID"
 VITE_FIREBASE_APP_ID="YOUR_FIREBASE_APP_ID"
 VITE_FIREBASE_MEASUREMENT_ID="YOUR_FIREBASE_MEASUREMENT_ID"
 
-# Gemini API Key
+# Gemini API Key (Google AI Studio から取得)
 VITE_GEMINI_API_KEY="YOUR_GEMINI_API_KEY"
 ```
-*※注: `.env` は自動的に `.gitignore` に追加されており、Gitリポジトリにはコミットされません。セキュリティのため、実際のAPI情報を公開リポジトリへ登録しないようご注意ください。*
+*※注: `.env` はセキュリティのため、Gitリポジトリにはコミットされません。実際のAPI情報を公開リポジトリへ登録しないようご注意ください。*
 
-### 3. ローカル開発サーバーの起動
+---
+
+### 3. 各種コマンド
+
+#### 開発用サーバーの起動
+ローカル開発サーバーを起動します（デフォルトでは `http://localhost:5173` で起動します）。
 ```bash
 npm run dev
 ```
 
-### 4. 本番用ビルドの生成
+#### 本番用ビルドの生成
+プロジェクトを本番用にコンパイルおよびビルドします。成果物は `dist/` ディレクトリに出力されます。
 ```bash
 npm run build
 ```
+
+#### ビルド成果物のローカルプレビュー
+本番用にビルドされた `dist/` ディレクトリの成果物をローカル環境で起動・テストします。
+```bash
+npm run preview
+```
+
+---
+
+### 4. Firebase Hosting へのデプロイ
+
+ビルドした静的ファイルを Firebase Hosting にデプロイする場合は、以下の手順を実行します。
+
+1. **Firebase CLI のセットアップ**
+   ```bash
+   npx firebase login
+   ```
+
+2. **プロジェクトの紐付け** (まだの場合)
+   ```bash
+   npx firebase use --add
+   ```
+
+3. **ビルドしてデプロイ**
+   ```bash
+   npm run build
+   npx firebase deploy
+   ```
 
 ---
 
