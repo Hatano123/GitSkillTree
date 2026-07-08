@@ -1,4 +1,4 @@
-export type SkillNodeState = 'acquired' | 'recommended' | 'locked';
+export type SkillNodeState = 'acquired' | 'recommended' | 'locked' | 'unlocked';
 
 export type SkillCategory = 'network' | 'infra' | 'backend' | 'frontend' | 'ai';
 
@@ -14,6 +14,8 @@ export interface RadarDataPoint {
   subject: string;
   A: number;
   fullMark: number;
+  // We can include a previous score B dynamically during rendering
+  B?: number; 
 }
 
 export interface ArchetypeInfo {
@@ -29,8 +31,15 @@ export interface ArchetypeInfo {
 
 export interface ScanRecord {
   id?: string;
-  url: string;
+  username: string;
+  avatarUrl: string;
   timestamp: string;
-  archetypeName: string;
+  archetypeKey: string;
   scores: RadarDataPoint[];
+  acquiredNodeIds: string[];
+  recommendedNodeIds: string[];
+  unlockedNodeIds: string[];
+  previousScanId: string | null;
+  customLogs: string[];
 }
+

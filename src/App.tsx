@@ -16,15 +16,16 @@ import '@xyflow/react/dist/style.css';
 
 import { 
   GitBranch, Sparkles, Terminal, ArrowRight, 
-  Compass, ChevronLeft, Info, Award, AlertCircle
+  Compass, ChevronLeft, Info, Award, AlertCircle, Share2, TrendingUp
 } from 'lucide-react';
 
 import CustomNode from './CustomNode';
 import { ARCHETYPES, INITIAL_NODES, INITIAL_EDGES, MOCK_REPOS } from './mockData';
-import { saveScan } from './firebase';
+import { saveScan, getScanById, getLatestScanByUsername } from './firebase';
 import { fetchUserMetadata } from './github';
 import { analyzeRepoWithGemini } from './gemini';
 import type { AnalysisResult } from './gemini';
+import type { ScanRecord } from './types';
 
 const GithubIcon = () => (
   <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -40,11 +41,11 @@ const nodeTypes = {
 const LOADING_STEPS = [
   'Connecting to GitHub API...',
   'Retrieving user public repositories catalog...',
-  'Analyzing repository list and descriptions...',
-  'Aggregating global language density metrics...',
-  'Inspecting package dependencies in top projects...',
-  'Calling Gemini 2.5 Flash to compute coding archetype...',
-  'Plotting skill node weights on the master layout...'
+  'Comparing with previous scan snapshots (baseline check)...',
+  'Aggregating code commit differences and language distributions...',
+  'Inspecting dependencies for newly added libraries...',
+  'Invoking Gemini 2.5 Flash for differential growth assessment...',
+  'Rendering growth pathways and unlocking new skill nodes...'
 ];
 
 export default function App() {
@@ -54,23 +55,71 @@ export default function App() {
   const [loadingStep, setLoadingStep] = useState(0);
   const [savedScanId, setSavedScanId] = useState<string | null>(null);
 
-  // AI & API States
+  // Growth & Analysis States
+  const [previousScan, setPreviousScan] = useState<ScanRecord | null>(null);
   const [customAnalysisResult, setCustomAnalysisResult] = useState<AnalysisResult | null>(null);
   const [isUsingAi, setIsUsingAi] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string>('');
+  const [isShareCopied, setIsShareCopied] = useState(false);
+  const [isDemoGrowthActive, setIsDemoGrowthActive] = useState(false);
 
   // Flow State
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
+  // 1. URL ID Param check on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const scanId = params.get('id');
+    if (scanId) {
+      setScreen('loading');
+      setLoadingStep(0);
+      
+      getScanById(scanId).then((record) => {
+        if (record) {
+          setGithubUsername(record.username);
+          setAvatarUrl(record.avatarUrl);
+          setSavedScanId(record.id || scanId);
+          setCustomAnalysisResult({
+            archetypeKey: record.archetypeKey as any,
+            scores: record.scores,
+            acquiredNodeIds: record.acquiredNodeIds,
+            recommendedNodeIds: record.recommendedNodeIds,
+            unlockedNodeIds: record.unlockedNodeIds,
+            customLogs: record.customLogs
+          });
+          
+          if (record.previousScanId) {
+            getScanById(record.previousScanId).then((prev) => {
+              if (prev) setPreviousScan(prev);
+            });
+          }
+
+          setTimeout(() => {
+            setScreen('result');
+          }, 800);
+        } else {
+          setErrorMessage('指定された共有IDのスキャンデータが見つかりませんでした。');
+          setScreen('input');
+        }
+      }).catch((err) => {
+        console.error(err);
+        setErrorMessage('データの読み込み中にエラーが発生しました。');
+        setScreen('input');
+      });
+    }
+  }, []);
+
   // Mock template select helper
   const handleSelectTemplate = (username: string, type: string) => {
     setGithubUsername(username);
     setArchetypeKey(type);
-    setIsUsingAi(false); // default mock for quick template clicking
+    setIsUsingAi(false);
     setErrorMessage(null);
     setAvatarUrl('');
+    setPreviousScan(null);
+    setCustomAnalysisResult(null);
   };
 
   // Start analysis
@@ -83,31 +132,116 @@ export default function App() {
     setLoadingStep(0);
     setErrorMessage(null);
     setCustomAnalysisResult(null);
+    setPreviousScan(null);
 
-    // If it's one of the mock templates and they didn't toggle custom, do mock simulation.
     const isMockUser = MOCK_REPOS.some(r => r.username === username);
 
     if (isMockUser && !isUsingAi) {
-      // Mock simulation mode
       setIsUsingAi(false);
       return;
     }
 
-    // Real GitHub + Gemini API mode
     setIsUsingAi(true);
     try {
-      // Fetch user profile + repos metadata from GitHub
-      const metadata = await fetchUserMetadata(username);
+      const prevScanRecord = await getLatestScanByUsername(username);
+      if (prevScanRecord) {
+        setPreviousScan(prevScanRecord);
+      }
+
+      const metadata = await fetchUserMetadata(username, prevScanRecord?.timestamp);
       setAvatarUrl(metadata.avatarUrl);
       
-      // Analyze using Gemini (Model: gemini-2.5-flash)
-      const geminiResult = await analyzeRepoWithGemini(metadata);
+      const geminiResult = await analyzeRepoWithGemini(metadata, prevScanRecord);
       setCustomAnalysisResult(geminiResult);
     } catch (err: any) {
       console.error(err);
       setErrorMessage(err.message || '解析中にエラーが発生しました。');
       setScreen('input');
     }
+  };
+
+  // Trigger simulated delta growth demo
+  const handleSimulateGrowth = () => {
+    setIsDemoGrowthActive(true);
+    setScreen('loading');
+    setLoadingStep(0);
+    setErrorMessage(null);
+
+    setTimeout(() => {
+      // Baseline Scan setup
+      const baselineScan: ScanRecord = {
+        id: 'baseline-demo-id',
+        username: 'chibicode',
+        avatarUrl: 'https://avatars.githubusercontent.com/u/74620?v=4',
+        timestamp: '2026/07/07 10:00:00',
+        archetypeKey: 'fullstack',
+        scores: [
+          { subject: 'ネットワーク', A: 50, fullMark: 100 },
+          { subject: 'インフラ', A: 40, fullMark: 100 },
+          { subject: 'バックエンド', A: 70, fullMark: 100 },
+          { subject: 'フロントエンド', A: 75, fullMark: 100 },
+          { subject: 'AI', A: 20, fullMark: 100 }
+        ],
+        acquiredNodeIds: ['git', 'html_css', 'javascript', 'typescript', 'react', 'nodejs', 'express', 'postgresql'],
+        recommendedNodeIds: ['nextjs', 'docker', 'aws'],
+        unlockedNodeIds: [],
+        previousScanId: null,
+        customLogs: []
+      };
+
+      setPreviousScan(baselineScan);
+      setGithubUsername('chibicode');
+      setAvatarUrl('https://avatars.githubusercontent.com/u/74620?v=4');
+
+      // Updated Growth Scan setup
+      setCustomAnalysisResult({
+        archetypeKey: 'fullstack',
+        scores: [
+          { subject: 'ネットワーク', A: 50, fullMark: 100 },
+          { subject: 'インフラ', A: 65, fullMark: 100 }, // +25
+          { subject: 'バックエンド', A: 75, fullMark: 100 }, // +5
+          { subject: 'フロントエンド', A: 88, fullMark: 100 }, // +13
+          { subject: 'AI', A: 20, fullMark: 100 }
+        ],
+        acquiredNodeIds: ['git', 'html_css', 'javascript', 'typescript', 'react', 'nodejs', 'express', 'postgresql', 'nextjs', 'docker'],
+        recommendedNodeIds: ['tailwind', 'aws', 'openai'],
+        unlockedNodeIds: ['nextjs', 'docker'],
+        customLogs: [
+          '🎉 前回のスキャンから新たに Next.js が導入されました！フロントエンド技術が +13% 成長しました。',
+          '🐳 Dockerfileのコミットを検知！インフラノード Docker が新しく解放されました（インフラ +25%）。',
+          'コミット差分により、新たに2つの技術スタックがアンロックされました！素晴らしい成長です！'
+        ]
+      });
+
+      setScreen('result');
+      setIsDemoGrowthActive(false);
+      
+      saveScan({
+        username: 'chibicode',
+        avatarUrl: 'https://avatars.githubusercontent.com/u/74620?v=4',
+        timestamp: new Date().toLocaleString('ja-JP'),
+        archetypeKey: 'fullstack',
+        scores: [
+          { subject: 'ネットワーク', A: 50, fullMark: 100 },
+          { subject: 'インフラ', A: 65, fullMark: 100 },
+          { subject: 'バックエンド', A: 75, fullMark: 100 },
+          { subject: 'フロントエンド', A: 88, fullMark: 100 },
+          { subject: 'AI', A: 20, fullMark: 100 }
+        ],
+        acquiredNodeIds: ['git', 'html_css', 'javascript', 'typescript', 'react', 'nodejs', 'express', 'postgresql', 'nextjs', 'docker'],
+        recommendedNodeIds: ['tailwind', 'aws', 'openai'],
+        unlockedNodeIds: ['nextjs', 'docker'],
+        previousScanId: 'baseline-demo-id',
+        customLogs: [
+          '🎉 前回のスキャンから新たに Next.js が導入されました！フロントエンド技術が +13% 成長しました。',
+          '🐳 Dockerfileのコミットを検知！インフラノード Docker が新しく解放されました（インフラ +25%）。',
+          'コミット差分により、新たに2つの技術スタックがアンロックされました！素晴らしい成長です！'
+        ]
+      }).then((docId) => {
+        setSavedScanId(docId);
+      });
+
+    }, 3100);
   };
 
   // Loading logs ticker simulation
@@ -120,25 +254,35 @@ export default function App() {
         
         if (isLastStep) {
           if (isUsingAi && !customAnalysisResult) {
-            // Wait for AI response to arrive
             return prev;
           }
           
           clearInterval(timer);
-          // Transition to result screen
+          
           setTimeout(() => {
             setScreen('result');
             
-            // Save final results to Firebase
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('id') || isDemoGrowthActive) return;
+
             const activeArchetypeKey = customAnalysisResult ? customAnalysisResult.archetypeKey : archetypeKey;
             const activeScores = customAnalysisResult ? customAnalysisResult.scores : ARCHETYPES[archetypeKey].scores;
-            const activeName = ARCHETYPES[activeArchetypeKey]?.name || 'Unknown Developer';
+            const acquiredNodeIds = customAnalysisResult ? customAnalysisResult.acquiredNodeIds : ARCHETYPES[archetypeKey].acquiredNodeIds;
+            const recommendedNodeIds = customAnalysisResult ? customAnalysisResult.recommendedNodeIds : ARCHETYPES[archetypeKey].recommendedNodeIds;
+            const unlockedNodeIds = customAnalysisResult ? customAnalysisResult.unlockedNodeIds : [];
+            const customLogs = customAnalysisResult ? customAnalysisResult.customLogs : ARCHETYPES[archetypeKey].nextSteps;
 
             saveScan({
-              url: `https://github.com/${githubUsername}`,
+              username: githubUsername,
+              avatarUrl: avatarUrl,
               timestamp: new Date().toLocaleString('ja-JP'),
-              archetypeName: activeName,
-              scores: activeScores
+              archetypeKey: activeArchetypeKey,
+              scores: activeScores,
+              acquiredNodeIds,
+              recommendedNodeIds,
+              unlockedNodeIds,
+              previousScanId: previousScan ? (previousScan.id || null) : null,
+              customLogs
             }).then((docId) => {
               setSavedScanId(docId);
             });
@@ -150,28 +294,32 @@ export default function App() {
     }, 450);
 
     return () => clearInterval(timer);
-  }, [screen, githubUsername, archetypeKey, isUsingAi, customAnalysisResult]);
+  }, [screen, githubUsername, archetypeKey, isUsingAi, customAnalysisResult, avatarUrl, previousScan, isDemoGrowthActive]);
 
-  // Sync React Flow nodes & edges whenever archetype, customAnalysisResult or screen updates
+  // Sync React Flow nodes & edges
   useEffect(() => {
     if (screen !== 'result') return;
 
     let acquiredIds: string[] = [];
     let recommendedIds: string[] = [];
+    let unlockedIds: string[] = [];
 
     if (customAnalysisResult) {
       acquiredIds = customAnalysisResult.acquiredNodeIds;
       recommendedIds = customAnalysisResult.recommendedNodeIds;
+      unlockedIds = customAnalysisResult.unlockedNodeIds || [];
     } else {
       const currentArchetype = ARCHETYPES[archetypeKey] || ARCHETYPES.frontend;
       acquiredIds = currentArchetype.acquiredNodeIds;
       recommendedIds = currentArchetype.recommendedNodeIds;
     }
 
-    // Build flow nodes with current state
     const flowNodes = INITIAL_NODES.map((node) => {
-      let state: 'acquired' | 'recommended' | 'locked' = 'locked';
-      if (acquiredIds.includes(node.id)) {
+      let state: 'acquired' | 'recommended' | 'locked' | 'unlocked' = 'locked';
+      
+      if (unlockedIds.includes(node.id)) {
+        state = 'unlocked';
+      } else if (acquiredIds.includes(node.id)) {
         state = 'acquired';
       } else if (recommendedIds.includes(node.id)) {
         state = 'recommended';
@@ -188,21 +336,19 @@ export default function App() {
       };
     });
 
-    // Build flow edges
     const flowEdges = INITIAL_EDGES.map((edge) => {
-      const isSourceAcquired = acquiredIds.includes(edge.source);
-      const isTargetAcquired = acquiredIds.includes(edge.target);
+      const isSourceAcquired = acquiredIds.includes(edge.source) || unlockedIds.includes(edge.source);
+      const isTargetAcquired = acquiredIds.includes(edge.target) || unlockedIds.includes(edge.target);
       const isTargetRecommended = recommendedIds.includes(edge.target);
 
-      // Color edges based on connections
-      let strokeColor = '#334155'; // default locked edge (gray)
+      let strokeColor = '#334155';
       let animated = false;
 
       if (isSourceAcquired && isTargetAcquired) {
-        strokeColor = '#10b981'; // acquired edge (green)
+        strokeColor = '#10b981';
         animated = true;
       } else if (isSourceAcquired && isTargetRecommended) {
-        strokeColor = '#fbbf24'; // recommendation pathway (yellow)
+        strokeColor = '#fbbf24';
         animated = true;
       }
 
@@ -221,7 +367,7 @@ export default function App() {
     setEdges(flowEdges);
   }, [screen, archetypeKey, customAnalysisResult, setNodes, setEdges]);
 
-  // Current archetype details (derived from AI analysis or mock selector)
+  // Current archetype details
   const archetype = useMemo(() => {
     if (customAnalysisResult) {
       const key = customAnalysisResult.archetypeKey;
@@ -237,6 +383,38 @@ export default function App() {
     }
     return ARCHETYPES[archetypeKey] || ARCHETYPES.frontend;
   }, [archetypeKey, customAnalysisResult]);
+
+  // Radar Data
+  const radarData = useMemo(() => {
+    return archetype.scores.map((s) => {
+      const prevVal = previousScan?.scores?.find(ps => ps.subject === s.subject)?.A;
+      return {
+        subject: s.subject,
+        A: s.A,
+        B: prevVal !== undefined ? prevVal : s.A,
+        fullMark: 100
+      };
+    });
+  }, [archetype, previousScan]);
+
+  const handleCopyLink = () => {
+    const idToShare = savedScanId;
+    if (!idToShare) return;
+
+    const shareUrl = `${window.location.origin}${window.location.pathname}?id=${idToShare}`;
+    navigator.clipboard.writeText(shareUrl).then(() => {
+      setIsShareCopied(true);
+      setTimeout(() => setIsShareCopied(false), 2000);
+    });
+  };
+
+  const handleBackToInput = () => {
+    window.history.pushState({}, document.title, window.location.pathname);
+    setSavedScanId(null);
+    setPreviousScan(null);
+    setCustomAnalysisResult(null);
+    setScreen('input');
+  };
 
   return (
     <div className="min-h-screen bg-[#070b13] text-slate-100 font-sans flex flex-col selection:bg-cyan-500/30 selection:text-cyan-200">
@@ -254,26 +432,26 @@ export default function App() {
             <h1 className="text-lg font-black tracking-wider bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">
               GitSkillTree
             </h1>
-            <p className="text-[10px] text-cyan-400 font-semibold tracking-widest uppercase">Developer Growth Tracker</p>
+            <p className="text-[10px] text-cyan-400 font-semibold tracking-widest uppercase">Growth Tracker</p>
           </div>
         </div>
 
         <div className="flex items-center gap-4 text-xs text-slate-400 font-mono">
           {screen === 'result' && savedScanId && (
-            <span className="bg-slate-900 border border-slate-800 px-3 py-1 rounded-full text-emerald-400 flex items-center gap-1.5 animate-fade-in">
+            <button
+              onClick={handleCopyLink}
+              className="bg-slate-900 hover:bg-slate-800 border border-slate-800 px-3 py-1.5 rounded-full text-slate-300 flex items-center gap-1.5 transition-all"
+            >
+              <Share2 className="w-3.5 h-3.5" />
+              {isShareCopied ? 'コピー完了!' : '共有リンクをコピー'}
+            </button>
+          )}
+          {screen === 'result' && savedScanId && (
+            <span className="bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-full text-emerald-400 hidden sm:flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-              Firebase Synced ID: {savedScanId.slice(0, 8)}...
+              Synced ID: {savedScanId.slice(0, 8)}...
             </span>
           )}
-          <a
-            href="https://github.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-white transition-colors flex items-center gap-1"
-          >
-            <GithubIcon />
-            GitHub
-          </a>
         </div>
       </header>
 
@@ -284,17 +462,17 @@ export default function App() {
           {/* Hero Headline */}
           <div className="text-center mb-8 max-w-2xl">
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-xs font-semibold mb-4">
-              <Sparkles className="w-3 h-3 animate-pulse" /> Gemini 2.5 Flash Profile Analyzer
+              <Sparkles className="w-3 h-3 animate-pulse" /> 昨日の自分を超えろ。成長特化型エンジニアリングトラッカー
             </span>
             <h2 className="text-4xl md:text-5xl font-black tracking-tight text-white mb-4 leading-tight">
-              自分のコードで<br className="sm:hidden" />
+              コミットが切り拓く、<br />
               <span className="bg-gradient-to-r from-cyan-400 via-indigo-400 to-pink-400 bg-clip-text text-transparent">
-                ツリーを埋めろ！
+                君だけのスキルツリー
               </span>
             </h2>
             <p className="text-slate-400 text-sm md:text-base leading-relaxed">
-              GitHubユーザー名を入力するだけで、全公開レポジトリの使用言語・依存関係をスキャン。<br />
-              あなたのエンジニア適性を多角形チャートにマッピングし、円形スキルツリーで次のおすすめを提示します。
+              初回スキャンで「ベースライン」を作成。開発した後に再スキャンすると、<br />
+              <strong>前回から伸びた適性スコアの差分</strong>と<strong>新しく解放された技術（アンロック演出）</strong>を実感できます。
             </p>
           </div>
 
@@ -337,7 +515,6 @@ export default function App() {
                     value={githubUsername}
                     onChange={(e) => {
                       setGithubUsername(e.target.value);
-                      // Auto-enable AI mode if it's not a pre-defined mock user
                       const isMockUser = MOCK_REPOS.some(r => r.username === e.target.value);
                       if (!isMockUser && e.target.value.trim() !== '') {
                         setIsUsingAi(true);
@@ -356,9 +533,21 @@ export default function App() {
 
               {/* Mock template selections */}
               <div>
-                <span className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-3">
-                  テスト用デモプロフィール (ユーザー選択)
-                </span>
+                <div className="flex items-center justify-between mb-3">
+                  <span className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                    テスト用デモプロフィール (ユーザー選択)
+                  </span>
+                  
+                  <button
+                    type="button"
+                    onClick={handleSimulateGrowth}
+                    className="text-[10px] font-black text-cyan-400 hover:text-cyan-300 flex items-center gap-1 bg-cyan-950/40 border border-cyan-550/20 px-2.5 py-1 rounded-lg transition-all"
+                  >
+                    <TrendingUp className="w-3.5 h-3.5" />
+                    成長比較デモを即時開始
+                  </button>
+                </div>
+                
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   {MOCK_REPOS.map((repo) => (
                     <button
@@ -382,11 +571,10 @@ export default function App() {
             </form>
           </div>
 
-          {/* Quick Info */}
           <div className="mt-8 flex items-start gap-3 text-xs text-slate-500 max-w-lg bg-slate-950/20 border border-slate-900/40 p-4 rounded-xl">
             <Info className="w-5 h-5 text-cyan-500/70 shrink-0 mt-0.5" />
             <p className="leading-relaxed">
-              <strong>全公開レポジトリ解析モード</strong>：GitHubユーザー全体の言語構成を一度にスキャンするため、単一のレポジトリを解析するよりも多角的にあなたのスキル特性を判別できます。
+              <strong>「成長比較デモを即時開始」</strong>ボタンを押すと、初回スキャン（ベースライン）と2回目スキャン（Next.jsとDockerを新習得）をシミュレーションした差分成長画面（キラキラ演出・二重レーダー）が即座に体験できます。
             </p>
           </div>
         </main>
@@ -402,10 +590,10 @@ export default function App() {
           </div>
 
           <h3 className="text-lg font-bold text-white mb-2 tracking-wide">
-            ユーザープロファイルを解析中...
+            差分データをスキャン中...
           </h3>
           
-          <div className="w-full bg-slate-950 border border-slate-900 rounded-xl p-4 font-mono text-xs text-slate-400 h-32 overflow-hidden shadow-inner flex flex-col justify-end">
+          <div className="w-full bg-slate-950 border border-slate-900 rounded-xl p-4 font-mono text-xs text-slate-400 h-36 overflow-hidden shadow-inner flex flex-col justify-end">
             <div className="space-y-1.5">
               {LOADING_STEPS.slice(0, loadingStep + 1).map((step, idx) => (
                 <div key={idx} className="flex items-start gap-2 text-cyan-400/90">
@@ -413,10 +601,10 @@ export default function App() {
                   <span className={idx === loadingStep ? 'text-white font-bold animate-pulse' : ''}>{step}</span>
                 </div>
               ))}
-              {isUsingAi && loadingStep === LOADING_STEPS.length - 1 && !customAnalysisResult && (
+              {(isUsingAi || isDemoGrowthActive) && loadingStep === LOADING_STEPS.length - 1 && !customAnalysisResult && (
                 <div className="flex items-start gap-2 text-indigo-400 animate-pulse">
                   <span className="text-slate-600">{`>`}</span>
-                  <span>Gemini 2.5 Flash is thinking...</span>
+                  <span>Gemini 2.5 Flash is calculating Growth Delta...</span>
                 </div>
               )}
             </div>
@@ -435,13 +623,27 @@ export default function App() {
               
               {/* Back & User profile header */}
               <div>
-                <button
-                  onClick={() => setScreen('input')}
-                  className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition-colors mb-4"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                  他のユーザーを解析
-                </button>
+                <div className="flex items-center justify-between mb-4">
+                  <button
+                    onClick={handleBackToInput}
+                    className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition-colors"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                    他のユーザーを解析
+                  </button>
+                  
+                  {/* Simulate Growth Demo Button when viewing baseline result */}
+                  {!previousScan && (
+                    <button
+                      onClick={handleSimulateGrowth}
+                      className="text-[10px] font-black bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 hover:bg-cyan-500 hover:text-slate-950 px-2.5 py-1.5 rounded-lg transition-all flex items-center gap-1 cursor-pointer"
+                    >
+                      <TrendingUp className="w-3.5 h-3.5" />
+                      成長差分を試す(再スキャン)
+                    </button>
+                  )}
+                </div>
+                
                 <div className="bg-slate-900/60 border border-slate-900 px-3.5 py-2.5 rounded-xl flex items-center gap-3 text-xs overflow-hidden">
                   {avatarUrl ? (
                     <img src={avatarUrl} className="w-9 h-9 rounded-full border border-slate-800 shrink-0" alt="GitHub Avatar" />
@@ -455,7 +657,7 @@ export default function App() {
                     <span className="text-slate-200 truncate font-mono font-bold">@{githubUsername}</span>
                   </div>
                   <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 uppercase font-mono font-semibold">
-                    {customAnalysisResult ? 'AI Scanned' : 'Mock'}
+                    {customAnalysisResult ? (previousScan ? 'Growth Delta' : 'Baseline') : 'Mock'}
                   </span>
                 </div>
               </div>
@@ -478,25 +680,46 @@ export default function App() {
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">
-                    適性グラフ
+                    {previousScan ? '成長の軌跡 (比較)' : '適性グラフ'}
                   </h3>
-                  <div className="text-[10px] text-slate-500 font-mono flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: archetype.accentColor }} />
-                    Skill Multiplier
+                  <div className="text-[10px] font-mono flex items-center gap-2">
+                    {previousScan && (
+                      <span className="text-slate-500 flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+                        前回
+                      </span>
+                    )}
+                    <span className="flex items-center gap-1 text-slate-300">
+                      <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: archetype.accentColor }} />
+                      今回
+                    </span>
                   </div>
                 </div>
 
                 <div className="h-56 bg-slate-950/60 border border-slate-900 rounded-xl flex items-center justify-center p-2">
                   <ResponsiveContainer width="100%" height="100%">
-                    <RadarChart cx="50%" cy="50%" outerRadius="80%" data={archetype.scores}>
+                    <RadarChart cx="50%" cy="50%" outerRadius="80%" data={radarData}>
                       <PolarGrid stroke="#1e293b" />
                       <PolarAngleAxis 
                         dataKey="subject" 
                         tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 600 }}
                       />
                       <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fill: '#475569', fontSize: 8 }} />
+                      
+                      {previousScan && (
+                        <Radar
+                          name="Previous"
+                          dataKey="B"
+                          stroke="#475569"
+                          fill="#475569"
+                          fillOpacity={0.05}
+                          strokeDasharray="4 4"
+                          animationDuration={500}
+                        />
+                      )}
+                      
                       <Radar
-                        name="Developer Factor"
+                        name="Current"
                         dataKey="A"
                         stroke={archetype.accentColor}
                         fill={archetype.accentColor}
@@ -513,7 +736,7 @@ export default function App() {
               <div className="space-y-2">
                 <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1">
                   <Compass className="w-3.5 h-3.5 text-amber-400" />
-                  {customAnalysisResult ? 'AIによる解析所見' : '次のおすすめ技術スタック'}
+                  {customAnalysisResult ? (previousScan ? '📈 成長フィードバック' : '📊 スキャン解析所見') : '次のおすすめ技術スタック'}
                 </h3>
                 <ul className="space-y-2">
                   {archetype.nextSteps.map((step, idx) => (
@@ -530,31 +753,6 @@ export default function App() {
                 </ul>
               </div>
 
-            </div>
-
-            {/* Switch Archetype (Demo purposes) */}
-            <div className="mt-8 pt-4 border-t border-slate-900">
-              <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">
-                別の適性タイプに切り替え (シミュレーション)
-              </label>
-              <div className="grid grid-cols-2 gap-1.5">
-                {Object.keys(ARCHETYPES).map((key) => (
-                  <button
-                    key={key}
-                    onClick={() => {
-                      setCustomAnalysisResult(null); // clear AI result to allow mock exploration
-                      setArchetypeKey(key);
-                    }}
-                    className={`px-2 py-1.5 rounded-lg border text-[10px] font-medium transition-all ${
-                      archetypeKey === key && !customAnalysisResult
-                        ? 'bg-slate-800 border-slate-700 text-white font-bold'
-                        : 'bg-slate-900/30 border-slate-950 text-slate-500 hover:text-slate-300 hover:bg-slate-900/50'
-                    }`}
-                  >
-                    {key.toUpperCase()}
-                  </button>
-                ))}
-              </div>
             </div>
 
           </section>
@@ -583,11 +781,15 @@ export default function App() {
               <div className="flex flex-wrap items-center gap-4 text-slate-400">
                 <div className="flex items-center gap-1.5">
                   <span className="w-2.5 h-2.5 rounded bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
-                  <span>取得済み (ユーザー全体のコードから検出)</span>
+                  <span>取得済み</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded bg-amber-400 animate-unlock-sparkle" />
+                  <span>✨ 今回新しく解放 (点滅)</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <span className="w-2.5 h-2.5 rounded bg-amber-400 animate-pulse" />
-                  <span>おすすめ (次の一手・点滅)</span>
+                  <span>おすすめ (次の一手)</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <span className="w-2.5 h-2.5 rounded bg-slate-700" />
