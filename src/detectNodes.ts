@@ -17,6 +17,7 @@ const NODE_DETECTION_RULES: Record<string, {
   },
   html_css: {
     languages: ['HTML', 'CSS', 'SCSS', 'Sass', 'Less'],
+    deps: ['react', 'next', 'vue', 'svelte', 'vite', 'tailwindcss'], // フロントエンド技術を使っていればHTML/CSSスキルは保有していると判定
   },
   javascript: {
     languages: ['JavaScript'],

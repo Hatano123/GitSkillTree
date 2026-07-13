@@ -50,9 +50,10 @@ export async function analyzeRepoWithGemini(
     ? previousScan.scores.map(s => `${s.subject}:${s.A}`).join(', ')
     : null;
 
+  const hasNoNewCommits = previousScan && metadata.recentEvents.length === 0;
+
   // Build ultra-slim prompt
-  const prompt = `
-開発者スキル評価AI。以下のデータからスコアリングと助言を行ってください。
+  const prompt = `開発者スキル評価AI。以下のデータからスコアリングと助言を行ってください。
 
 ユーザー: ${metadata.username} (公開リポ${metadata.publicReposCount}件)
 検出済み技術: [${detectedNodeIds.join(', ')}]
@@ -62,10 +63,10 @@ ${prevScoresCompact ? `前回スコア: ${prevScoresCompact}` : '初回スキャ
 ${unlockedNodeIds.length > 0 ? `今回新規解放: [${unlockedNodeIds.join(', ')}]` : ''}
 
 回答:
-1. scores: 5カテゴリ(ネットワーク,インフラ,バックエンド,フロントエンド,AI)を0-100で${prevScoresCompact ? '前回以上の値で' : ''}算出
+1. scores: 5カテゴリ(ネットワーク,インフラ,バックエンド,フロントエンド,AI)を0-100で算出。${hasNoNewCommits ? '【重要】新規コミット差分がないため、必ず前回スコアと全く同じ数値を維持し、無理な加算をしないでください。' : (prevScoresCompact ? '前回スコア以上の値で成長分を加算してください。' : '')}
 2. recommendedNodeIds: 未習得[${candidateNodes.join(', ')}]から次におすすめ最大3つ
 3. archetypeKey: frontend/ai/devops/fullstackから1つ
-4. customLogs: ${unlockedNodeIds.length > 0 ? `新規解放ノード(${unlockedNodeIds.join(',')})を祝う` : '現状の'}成長コメント3つ(日本語、${metadata.username}さん宛て)
+4. customLogs: ${hasNoNewCommits ? '「新規コミット差分がありませんでした。開発を続けて次に期待しましょう！」といった励ましの' : (unlockedNodeIds.length > 0 ? `新規解放ノード(${unlockedNodeIds.join(',')})を祝う` : '現状の')}成長コメント3つ(日本語、${metadata.username}さん宛て)
 
 JSON形式:
 {
