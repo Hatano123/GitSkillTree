@@ -18,6 +18,30 @@ export interface UserMetadata {
   }[];
 }
 
+// Fallback for local development when GitHub API rate limit is exceeded
+function getMockUserMetadata(username: string): UserMetadata {
+  return {
+    username,
+    avatarUrl: 'https://avatars.githubusercontent.com/u/9919?v=4', // GitHub logo
+    publicReposCount: 15,
+    repositories: [
+      { name: 'mock-repo-1', description: 'React app', language: 'TypeScript', stars: 10 },
+      { name: 'mock-repo-2', description: 'Backend API', language: 'JavaScript', stars: 5 },
+      { name: 'mock-repo-3', description: 'Scripts', language: 'Python', stars: 2 }
+    ],
+    aggregatedLanguages: { TypeScript: 5, JavaScript: 3, Python: 2 },
+    packageJsonDeps: ['react', 'next', 'tailwindcss', 'express', 'pg'],
+    recentEvents: [
+      {
+        type: 'PushEvent',
+        repoName: `${username}/mock-repo-1`,
+        createdAt: new Date().toISOString(),
+        commits: ['feat: add new feature', 'fix: bug fix']
+      }
+    ]
+  };
+}
+
 export async function fetchUserMetadata(username: string, sinceTimestamp?: string): Promise<UserMetadata> {
   const cleanUsername = username.trim();
   if (!cleanUsername) {
@@ -30,6 +54,13 @@ export async function fetchUserMetadata(username: string, sinceTimestamp?: strin
     if (userRes.status === 404) {
       throw new Error(`GitHubユーザー "${cleanUsername}" が見つかりませんでした。`);
     }
+    
+    // In local development, if we hit rate limits (403), return mock data to prevent blocking
+    if (import.meta.env.DEV) {
+      console.warn(`[DEV MODE] GitHub API Error (${userRes.status}). Returning mock data to bypass rate limit.`);
+      return getMockUserMetadata(cleanUsername);
+    }
+
     throw new Error(`ユーザー情報の取得に失敗しました: ${userRes.statusText}`);
   }
   const userData = await userRes.json();
@@ -37,16 +68,22 @@ export async function fetchUserMetadata(username: string, sinceTimestamp?: strin
   // Fetch public repositories (up to 100)
   const reposRes = await fetch(`https://api.github.com/users/${cleanUsername}/repos?per_page=100&sort=updated`);
   if (!reposRes.ok) {
+    if (import.meta.env.DEV) {
+      console.warn(`[DEV MODE] GitHub API Repos Error. Returning mock data.`);
+      return getMockUserMetadata(cleanUsername);
+    }
     throw new Error(`レポジトリ一覧の取得に失敗しました: ${reposRes.statusText}`);
   }
   const reposData = await reposRes.json();
 
-  const repositories: UserMetadata['repositories'] = reposData.map((repo: any) => ({
-    name: repo.name,
-    description: repo.description || '',
-    language: repo.language || '',
-    stars: repo.stargazers_count || 0
-  }));
+  const repositories: UserMetadata['repositories'] = reposData
+    .filter((repo: any) => !repo.fork) // Exclude forks - only analyze user's own code
+    .map((repo: any) => ({
+      name: repo.name,
+      description: repo.description || '',
+      language: repo.language || '',
+      stars: repo.stargazers_count || 0
+    }));
 
   // Aggregate languages
   const aggregatedLanguages: Record<string, number> = {};
@@ -65,7 +102,12 @@ export async function fetchUserMetadata(username: string, sinceTimestamp?: strin
       if (Array.isArray(eventsData)) {
         // Map raw events
         const mapped = eventsData.map((event: any) => {
-          const commits = event.payload?.commits?.map((c: any) => c.message) || [];
+          let commits = event.payload?.commits?.map((c: any) => c.message) || [];
+          // Filter auto messages and truncate
+          commits = commits
+            .filter((msg: string) => !msg.includes('Merge pull request') && !msg.includes('Merge branch'))
+            .map((msg: string) => msg.length > 50 ? msg.substring(0, 50) + '...' : msg);
+
           return {
             type: event.type,
             repoName: event.repo?.name || '',
@@ -83,6 +125,8 @@ export async function fetchUserMetadata(username: string, sinceTimestamp?: strin
           recentEvents = mapped.slice(0, 10);
         }
       }
+    } else if (import.meta.env.DEV) {
+      console.warn(`[DEV MODE] GitHub API Events Error. Using empty events.`);
     }
   } catch (e) {
     console.warn('Failed to fetch recent events:', e);
@@ -107,7 +151,16 @@ export async function fetchUserMetadata(username: string, sinceTimestamp?: strin
             ...parsedPkg.dependencies,
             ...parsedPkg.devDependencies
           };
-          Object.keys(deps).forEach((dep) => packageJsonDepsSet.add(dep));
+          
+          const noisePackages = [
+            'typescript', 'eslint', 'prettier', 'ts-node', 'nodemon', 'husky', 'lint-staged'
+          ];
+          
+          Object.keys(deps).forEach((dep) => {
+            if (!dep.startsWith('@types/') && !noisePackages.some(n => dep.includes(n))) {
+              packageJsonDepsSet.add(dep);
+            }
+          });
         }
       }
     } catch (e) {
