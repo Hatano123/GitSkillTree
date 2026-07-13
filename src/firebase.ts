@@ -1,6 +1,8 @@
 import { initializeApp } from 'firebase/app';
 import { getAnalytics } from 'firebase/analytics';
-import { getFirestore, collection, addDoc, getDocs, query, orderBy, limit } from 'firebase/firestore';
+import { 
+  getFirestore, collection, addDoc, getDocs, doc, getDoc, query, where, orderBy, limit 
+} from 'firebase/firestore';
 import type { ScanRecord } from './types';
 
 const firebaseConfig = {
@@ -36,6 +38,38 @@ export async function saveScan(scan: Omit<ScanRecord, 'id'>): Promise<string> {
     console.error("Error adding document to Firestore: ", e);
     return 'local-dummy-' + Date.now();
   }
+}
+
+export async function getScanById(id: string): Promise<ScanRecord | null> {
+  try {
+    const docRef = doc(db, 'scans', id);
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      return { id: docSnap.id, ...docSnap.data() } as ScanRecord;
+    }
+  } catch (e) {
+    console.error("Error fetching document by ID:", e);
+  }
+  return null;
+}
+
+export async function getLatestScanByUsername(username: string): Promise<ScanRecord | null> {
+  try {
+    const q = query(
+      collection(db, 'scans'),
+      where('username', '==', username.trim()),
+      orderBy('timestamp', 'desc'),
+      limit(1)
+    );
+    const querySnapshot = await getDocs(q);
+    if (!querySnapshot.empty) {
+      const docSnap = querySnapshot.docs[0];
+      return { id: docSnap.id, ...docSnap.data() } as ScanRecord;
+    }
+  } catch (e) {
+    console.error("Error querying latest scan for user:", e);
+  }
+  return null;
 }
 
 export async function getRecentScans(limitCount = 5): Promise<ScanRecord[]> {

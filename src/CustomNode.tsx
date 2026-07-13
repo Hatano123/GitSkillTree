@@ -12,7 +12,27 @@ const ICON_MAP: Record<string, React.ComponentType<any>> = {
   Terminal, Server, Database, Box, Cloud, Workflow, Binary, Cpu, Sparkles, Link
 };
 
-const CustomNode: React.FC<NodeProps> = ({ data }) => {
+const UNLOCK_TIPS: Record<string, string> = {
+  git: 'このツリーの起点です。すでに有効になっています。',
+  html_css: '公開リポジトリを作成し、HTMLかCSSファイルを含めてコミットしてください。',
+  javascript: 'JavaScriptのコード（.jsファイル）をリポジトリに追加してコミットしてください。',
+  typescript: 'リポジトリに TypeScript構成（tsconfig.json等）または .ts/.tsx ファイルを追加してください。',
+  react: 'package.jsonの依存関係に "react" を追加してコミットしてください。',
+  nextjs: 'package.jsonの依存関係に "next" を追加してコミットしてください。',
+  tailwind: 'package.jsonの依存関係に "tailwindcss" を追加してCSS構成を記述してください。',
+  nodejs: 'サーバーサイドJSコードを含め、Nodeの起動スクリプトを作成してください。',
+  express: 'package.jsonの依存関係に "express" を追加してAPIサーバーを作成してください。',
+  postgresql: 'リポジトリにSQL定義、またはデータベース接続ライブラリ（pg, prisma等）を追加してください。',
+  docker: 'リポジトリのルートに "Dockerfile" を作成してコミットしてください。',
+  aws: 'リポジトリ内に ".yaml" のCloudFormation、あるいはAWS CDK構成を追加してください。',
+  github_actions: 'リポジトリに ".github/workflows" ディレクトリを追加し、YAMLパイプラインを作成してください。',
+  python: 'Pythonファイル（.py）を含むリポジトリを公開コミットしてください。',
+  pytorch: 'requirements.txtに "torch" を追加するか、PyTorchを使用した機械学習コードを作成してください。',
+  openai: 'OpenAI APIキーを呼び出すコード、または依存ライブラリを追加してください。',
+  langchain: 'requirements.txtに "langchain" または "langchain-core" を追加してください。'
+};
+
+const CustomNode: React.FC<NodeProps> = ({ id, data }) => {
   const nodeData = data as unknown as SkillNodeData;
   const Icon = ICON_MAP[nodeData.iconName] || Code;
 
@@ -58,6 +78,10 @@ const CustomNode: React.FC<NodeProps> = ({ data }) => {
     // Acquired: Bright colored glowing border and filled glassmorphism
     nodeStyle = `border-2 bg-slate-900/90 shadow-[0_0_20px_rgba(16,185,129,0.25)] border-emerald-500`;
     dotColor = 'bg-emerald-400 ring-2 ring-emerald-950';
+  } else if (nodeData.state === 'unlocked') {
+    // Unlocked: Gold/green intense sparkle animation
+    nodeStyle = `border-2 bg-slate-900/90 animate-unlock-sparkle`;
+    dotColor = 'bg-amber-400 ring-2 ring-amber-950 animate-ping';
   } else if (nodeData.state === 'recommended') {
     // Recommended: Pulsing border glow
     nodeStyle = `border-2 bg-slate-900/90 border-amber-400 animate-pulse-glow`;
@@ -81,6 +105,13 @@ const CustomNode: React.FC<NodeProps> = ({ data }) => {
         
         {/* State indicator dot */}
         <span className={`absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full ${dotColor}`} />
+        
+        {/* Sparkle star for unlocked state */}
+        {nodeData.state === 'unlocked' && (
+          <span className="absolute -bottom-1 -right-1 bg-amber-400 text-slate-950 text-[8px] font-black px-1 rounded-full shadow-md animate-bounce">
+            NEW!
+          </span>
+        )}
       </div>
 
       {/* Label tag under the circle */}
@@ -91,15 +122,39 @@ const CustomNode: React.FC<NodeProps> = ({ data }) => {
       </div>
 
       {/* Tooltip info */}
-      <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-3 w-56 p-3 rounded-xl bg-slate-950/95 border border-slate-800 shadow-2xl text-xs text-slate-300 opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity duration-200 z-50">
+      <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-3 w-64 p-3 rounded-xl bg-slate-950/95 border border-slate-800 shadow-2xl text-xs text-slate-300 opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity duration-200 z-50">
         <div className="flex items-center gap-1.5 mb-1">
-          <span className={`w-2 h-2 rounded-full ${nodeData.state === 'acquired' ? 'bg-emerald-400' : nodeData.state === 'recommended' ? 'bg-amber-400' : 'bg-slate-700'}`} />
+          <span className={`w-2.5 h-2.5 rounded-full ${
+            nodeData.state === 'acquired' ? 'bg-emerald-400' : 
+            nodeData.state === 'unlocked' ? 'bg-amber-400 animate-ping' : 
+            nodeData.state === 'recommended' ? 'bg-amber-400' : 'bg-slate-700'
+          }`} />
           <p className="font-bold text-white uppercase tracking-wider">{nodeData.label}</p>
         </div>
-        <p className="leading-relaxed text-[11px] text-slate-400">{nodeData.description}</p>
-        <div className="mt-2 flex items-center justify-between text-[9px] font-mono text-slate-500 border-t border-slate-900 pt-1.5">
+        
+        <p className="leading-relaxed text-[11px] text-slate-400 mb-2">{nodeData.description}</p>
+        
+        {/* Custom unlock instructions if locked or recommended */}
+        {nodeData.state !== 'acquired' && nodeData.state !== 'unlocked' && (
+          <div className="bg-slate-900/80 border border-slate-800/60 p-2 rounded-lg mb-2">
+            <p className="text-[10px] font-bold text-amber-400 mb-0.5">🔓 解放条件（次の一手）</p>
+            <p className="text-[10px] text-slate-300 leading-normal">{UNLOCK_TIPS[id] || '公開リポジトリでこの技術を使用してください。'}</p>
+          </div>
+        )}
+
+        {nodeData.state === 'unlocked' && (
+          <div className="bg-emerald-500/10 border border-emerald-500/20 p-2 rounded-lg mb-2 text-[10px] text-emerald-400">
+            🎉 前回のスキャンから新しく習得（解放）されました！
+          </div>
+        )}
+
+        <div className="mt-1.5 flex items-center justify-between text-[9px] font-mono text-slate-500 border-t border-slate-900 pt-1.5">
           <span>GENRE: {nodeData.category.toUpperCase()}</span>
-          <span className={nodeData.state === 'acquired' ? 'text-emerald-400' : nodeData.state === 'recommended' ? 'text-amber-400' : 'text-slate-500'}>
+          <span className={
+            nodeData.state === 'acquired' ? 'text-emerald-400 font-bold' : 
+            nodeData.state === 'unlocked' ? 'text-amber-400 font-black animate-pulse' : 
+            nodeData.state === 'recommended' ? 'text-amber-400 font-semibold' : 'text-slate-500'
+          }>
             {nodeData.state.toUpperCase()}
           </span>
         </div>

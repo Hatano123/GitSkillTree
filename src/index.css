@@ -4,6 +4,9 @@
   .animate-pulse-glow {
     animation: pulse-glow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   }
+  .animate-unlock-sparkle {
+    animation: unlock-sparkle 1.2s cubic-bezier(0.25, 1, 0.5, 1) infinite alternate;
+  }
 }
 
 @keyframes pulse-glow {
@@ -14,6 +17,18 @@
   50% {
     opacity: .6;
     filter: drop-shadow(0 0 5px rgba(234, 179, 8, 0.2));
+  }
+}
+
+@keyframes unlock-sparkle {
+  0% {
+    box-shadow: 0 0 5px rgba(251, 191, 36, 0.4), 0 0 10px rgba(16, 185, 129, 0.2);
+    border-color: #fbbf24;
+  }
+  100% {
+    box-shadow: 0 0 20px rgba(251, 191, 36, 0.9), 0 0 30px rgba(16, 185, 129, 0.7), 0 0 5px rgba(255, 255, 255, 0.5);
+    border-color: #10b981;
+    transform: scale(1.06);
   }
 }
 
