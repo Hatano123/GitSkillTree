@@ -20,6 +20,63 @@ const ALL_NODE_IDS = [
   'python', 'pytorch', 'openai', 'langchain'
 ];
 
+const ARCHETYPE_KEYS = ['frontend', 'ai', 'devops', 'fullstack'] as const;
+const SCORE_SUBJECTS = ['ネットワーク', 'インフラ', 'バックエンド', 'フロントエンド', 'AI'];
+
+function validateGeminiResponse(value: unknown, candidateNodes: string[]) {
+  if (!value || typeof value !== 'object') {
+    throw new Error('Gemini response is not an object.');
+  }
+
+  const response = value as Record<string, unknown>;
+  if (!ARCHETYPE_KEYS.includes(response.archetypeKey as typeof ARCHETYPE_KEYS[number])) {
+    throw new Error('Gemini response has an invalid archetype.');
+  }
+
+  if (!Array.isArray(response.scores) || response.scores.length !== SCORE_SUBJECTS.length) {
+    throw new Error('Gemini response has invalid scores.');
+  }
+
+  const scores = response.scores.map((score, index) => {
+    if (!score || typeof score !== 'object') {
+      throw new Error('Gemini response has an invalid score entry.');
+    }
+    const entry = score as Record<string, unknown>;
+    if (
+      entry.subject !== SCORE_SUBJECTS[index] ||
+      typeof entry.A !== 'number' || !Number.isFinite(entry.A) || entry.A < 0 || entry.A > 100 ||
+      entry.fullMark !== 100
+    ) {
+      throw new Error('Gemini response has an invalid score value.');
+    }
+    return { subject: entry.subject, A: entry.A, fullMark: entry.fullMark };
+  });
+
+  if (
+    !Array.isArray(response.recommendedNodeIds) ||
+    response.recommendedNodeIds.length > 3 ||
+    new Set(response.recommendedNodeIds).size !== response.recommendedNodeIds.length ||
+    !response.recommendedNodeIds.every((id) => typeof id === 'string' && candidateNodes.includes(id))
+  ) {
+    throw new Error('Gemini response has invalid recommendations.');
+  }
+
+  if (
+    !Array.isArray(response.customLogs) ||
+    response.customLogs.length !== 3 ||
+    !response.customLogs.every((log) => typeof log === 'string' && log.trim().length > 0)
+  ) {
+    throw new Error('Gemini response has invalid feedback.');
+  }
+
+  return {
+    archetypeKey: response.archetypeKey as AnalysisResult['archetypeKey'],
+    scores,
+    recommendedNodeIds: response.recommendedNodeIds as string[],
+    customLogs: response.customLogs as string[]
+  };
+}
+
 export async function analyzeRepoWithGemini(
   metadata: UserMetadata,
   detectedNodeIds: string[],
@@ -66,7 +123,7 @@ ${unlockedNodeIds.length > 0 ? `今回新規解放: [${unlockedNodeIds.join(', '
 1. scores: 5カテゴリ(ネットワーク,インフラ,バックエンド,フロントエンド,AI)を0-100で算出。${hasNoNewCommits ? '【重要】新規コミット差分がないため、必ず前回スコアと全く同じ数値を維持し、無理な加算をしないでください。' : (prevScoresCompact ? '前回スコア以上の値で成長分を加算してください。' : '')}
 2. recommendedNodeIds: 未習得[${candidateNodes.join(', ')}]から次におすすめ最大3つ
 3. archetypeKey: frontend/ai/devops/fullstackから1つ
-4. customLogs: ${hasNoNewCommits ? '「新規コミット差分がありませんでした。開発を続けて次に期待しましょう！」といった励ましの' : (unlockedNodeIds.length > 0 ? `新規解放ノード(${unlockedNodeIds.join(',')})を祝う` : '現状の')}成長コメント3つ(日本語、${metadata.username}さん宛て)
+4. customLogs: ${hasNoNewCommits ? '「新規コミット差分がありませんでした。開発を続けて次に期待しましょう！」といった励ましの' : (unlockedNodeIds.length > 0 ? `新規解放ノード(${unlockedNodeIds.join(',')})を祝う` : '現状の')}成長コメント3つ(日本語、${metadata.username}さん宛て)。注意点として、「○%成長しました」などの不自然な数値表現は避け、定性的に成長を褒める自然なテキストにしてください。
 
 JSON形式:
 {
@@ -88,7 +145,7 @@ JSON形式:
   
   try {
     const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-    const parsed = JSON.parse(cleanJson);
+    const parsed = validateGeminiResponse(JSON.parse(cleanJson), candidateNodes);
 
     // Merge client-side detection with AI scoring
     return {

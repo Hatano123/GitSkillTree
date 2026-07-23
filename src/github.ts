@@ -42,6 +42,10 @@ function getMockUserMetadata(username: string): UserMetadata {
   };
 }
 
+function shouldUseDevMock(response: Response): boolean {
+  return import.meta.env.DEV && response.status === 403;
+}
+
 export async function fetchUserMetadata(username: string, sinceTimestamp?: string): Promise<UserMetadata> {
   const cleanUsername = username.trim();
   if (!cleanUsername) {
@@ -55,8 +59,9 @@ export async function fetchUserMetadata(username: string, sinceTimestamp?: strin
       throw new Error(`GitHubユーザー "${cleanUsername}" が見つかりませんでした。`);
     }
     
-    // In local development, if we hit rate limits (403), return mock data to prevent blocking
-    if (import.meta.env.DEV) {
+    // Only hide GitHub rate limits during local development. Other failures
+    // must remain visible instead of being presented as an invented analysis.
+    if (shouldUseDevMock(userRes)) {
       console.warn(`[DEV MODE] GitHub API Error (${userRes.status}). Returning mock data to bypass rate limit.`);
       return getMockUserMetadata(cleanUsername);
     }
@@ -68,7 +73,7 @@ export async function fetchUserMetadata(username: string, sinceTimestamp?: strin
   // Fetch public repositories (up to 100)
   const reposRes = await fetch(`https://api.github.com/users/${cleanUsername}/repos?per_page=100&sort=updated`);
   if (!reposRes.ok) {
-    if (import.meta.env.DEV) {
+    if (shouldUseDevMock(reposRes)) {
       console.warn(`[DEV MODE] GitHub API Repos Error. Returning mock data.`);
       return getMockUserMetadata(cleanUsername);
     }
@@ -163,9 +168,9 @@ export async function fetchUserMetadata(username: string, sinceTimestamp?: strin
           });
         }
       }
-    } catch (e) {
-      console.log(`No package.json in ${repo.name}`);
-    }
+  } catch {
+    console.log(`No package.json in ${repo.name}`);
+  }
   }
 
   return {

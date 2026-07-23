@@ -137,10 +137,25 @@ export default function App() {
     setCustomAnalysisResult(null);
     setPreviousScan(null);
 
-    const isMockUser = MOCK_REPOS.some(r => r.username === username);
+    const mockTemplate = MOCK_REPOS.find(r => r.username === username);
 
-    if (isMockUser && !isUsingAi) {
+    if (mockTemplate && !isUsingAi) {
       setIsUsingAi(false);
+      const mockArchetype = ARCHETYPES[mockTemplate.type] || ARCHETYPES.frontend;
+
+      // Template scans do not call external APIs, but must still complete the
+      // loading flow so the result screen is reachable.
+      setLoadingStep(4);
+      window.setTimeout(() => {
+        setCustomAnalysisResult({
+          archetypeKey: mockTemplate.type as AnalysisResult['archetypeKey'],
+          scores: mockArchetype.scores,
+          acquiredNodeIds: mockArchetype.acquiredNodeIds,
+          recommendedNodeIds: mockArchetype.recommendedNodeIds,
+          unlockedNodeIds: [],
+          customLogs: mockArchetype.nextSteps
+        });
+      }, 400);
       return;
     }
 
@@ -229,8 +244,8 @@ export default function App() {
         recommendedNodeIds: ['tailwind', 'aws', 'openai'],
         unlockedNodeIds: ['nextjs', 'docker'],
         customLogs: [
-          '🎉 前回のスキャンから新たに Next.js が導入されました！フロントエンド技術が +13% 成長しました。',
-          '🐳 Dockerfileのコミットを検知！インフラノード Docker が新しく解放されました（インフラ +25%）。',
+          '🎉 前回のスキャンから新たに Next.js が導入されました！フロントエンド技術が一段と強化されています。',
+          '🐳 Dockerfileのコミットを検知！インフラノード Docker が新しく解放されました。',
           'コミット差分により、新たに2つの技術スタックがアンロックされました！素晴らしい成長です！'
         ]
       });
@@ -255,8 +270,8 @@ export default function App() {
         unlockedNodeIds: ['nextjs', 'docker'],
         previousScanId: 'baseline-demo-id',
         customLogs: [
-          '🎉 前回のスキャンから新たに Next.js が導入されました！フロントエンド技術が +13% 成長しました。',
-          '🐳 Dockerfileのコミットを検知！インフラノード Docker が新しく解放されました（インフラ +25%）。',
+          '🎉 前回のスキャンから新たに Next.js が導入されました！フロントエンド技術が一段と強化されています。',
+          '🐳 Dockerfileのコミットを検知！インフラノード Docker が新しく解放されました。',
           'コミット差分により、新たに2つの技術スタックがアンロックされました！素晴らしい成長です！'
         ]
       }).then((docId) => {
