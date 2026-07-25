@@ -23,6 +23,7 @@ import CustomNode from './CustomNode';
 import { ARCHETYPES, INITIAL_NODES, INITIAL_EDGES, MOCK_REPOS } from './mockData';
 import { saveScan, getScanById, getLatestScanByUsername } from './firebase';
 import { fetchUserMetadata } from './github';
+import { detectAcquiredNodes } from './detectNodes';
 import { analyzeRepoWithGemini } from './gemini';
 import type { AnalysisResult } from './gemini';
 import type { ScanRecord } from './types';
@@ -38,14 +39,31 @@ const nodeTypes = {
   custom: CustomNode,
 };
 
-const LOADING_STEPS = [
-  'Connecting to GitHub API...',
-  'Retrieving user public repositories catalog...',
-  'Comparing with previous scan snapshots (baseline check)...',
-  'Aggregating code commit differences and language distributions...',
-  'Inspecting dependencies for newly added libraries...',
-  'Invoking Gemini 2.5 Flash for differential growth assessment...',
-  'Rendering growth pathways and unlocking new skill nodes...'
+const SCAN_CACHE_DURATION_MS = 10 * 60 * 1000;
+type AnalysisResultSource = 'fresh' | 'cache' | 'fallback' | null;
+
+function toAnalysisResult(scan: ScanRecord): AnalysisResult {
+  return {
+    archetypeKey: scan.archetypeKey as AnalysisResult['archetypeKey'],
+    scores: scan.scores,
+    acquiredNodeIds: scan.acquiredNodeIds,
+    recommendedNodeIds: scan.recommendedNodeIds,
+    unlockedNodeIds: scan.unlockedNodeIds,
+    customLogs: scan.customLogs,
+  };
+}
+
+function isScanCacheValid(scan: ScanRecord): boolean {
+  const timestamp = new Date(scan.timestamp).getTime();
+  return Number.isFinite(timestamp) && Date.now() - timestamp >= 0 && Date.now() - timestamp < SCAN_CACHE_DURATION_MS;
+}
+
+const LOADING_STEP_LABELS = [
+  'Firestore: 前回スキャン検索',
+  'GitHub API: リポジトリ取得',
+  'ノード検出 (クライアント)',
+  'Gemini API: スコアリング',
+  '完了'
 ];
 
 export default function App() {
@@ -54,10 +72,13 @@ export default function App() {
   const [archetypeKey, setArchetypeKey] = useState('frontend');
   const [loadingStep, setLoadingStep] = useState(0);
   const [savedScanId, setSavedScanId] = useState<string | null>(null);
+  const [timingLogs, setTimingLogs] = useState<{ label: string; ms: number }[]>([]);
+  const [displayProgress, setDisplayProgress] = useState(0);
 
   // Growth & Analysis States
   const [previousScan, setPreviousScan] = useState<ScanRecord | null>(null);
   const [customAnalysisResult, setCustomAnalysisResult] = useState<AnalysisResult | null>(null);
+  const [analysisResultSource, setAnalysisResultSource] = useState<AnalysisResultSource>(null);
   const [isUsingAi, setIsUsingAi] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string>('');
@@ -120,6 +141,7 @@ export default function App() {
     setAvatarUrl('');
     setPreviousScan(null);
     setCustomAnalysisResult(null);
+    setAnalysisResultSource(null);
   };
 
   // Start analysis
@@ -130,31 +152,91 @@ export default function App() {
 
     setScreen('loading');
     setLoadingStep(0);
+    setDisplayProgress(0);
+    setTimingLogs([]);
     setErrorMessage(null);
     setCustomAnalysisResult(null);
     setPreviousScan(null);
+    setAnalysisResultSource(null);
 
-    const isMockUser = MOCK_REPOS.some(r => r.username === username);
+    const mockTemplate = MOCK_REPOS.find(r => r.username === username);
 
-    if (isMockUser && !isUsingAi) {
+    if (mockTemplate && !isUsingAi) {
       setIsUsingAi(false);
+      const mockArchetype = ARCHETYPES[mockTemplate.type] || ARCHETYPES.frontend;
+
+      // Template scans do not call external APIs, but must still complete the
+      // loading flow so the result screen is reachable.
+      setLoadingStep(4);
+      window.setTimeout(() => {
+        setCustomAnalysisResult({
+          archetypeKey: mockTemplate.type as AnalysisResult['archetypeKey'],
+          scores: mockArchetype.scores,
+          acquiredNodeIds: mockArchetype.acquiredNodeIds,
+          recommendedNodeIds: mockArchetype.recommendedNodeIds,
+          unlockedNodeIds: [],
+          customLogs: mockArchetype.nextSteps
+        });
+        setAnalysisResultSource('fresh');
+      }, 400);
       return;
     }
 
     setIsUsingAi(true);
+    let prevScanRecord: ScanRecord | null = null;
     try {
-      const prevScanRecord = await getLatestScanByUsername(username);
+      // Step 0: Firestore lookup
+      let t0 = performance.now();
+      prevScanRecord = await getLatestScanByUsername(username);
       if (prevScanRecord) {
         setPreviousScan(prevScanRecord);
       }
+      setTimingLogs(prev => [...prev, { label: LOADING_STEP_LABELS[0], ms: Math.round(performance.now() - t0) }]);
 
+      if (prevScanRecord && isScanCacheValid(prevScanRecord)) {
+        setAvatarUrl(prevScanRecord.avatarUrl);
+        setSavedScanId(prevScanRecord.id || null);
+        setPreviousScan(null);
+        setCustomAnalysisResult(toAnalysisResult(prevScanRecord));
+        setAnalysisResultSource('cache');
+        setLoadingStep(4);
+        return;
+      }
+
+      setLoadingStep(1);
+
+      // Step 1: GitHub API
+      t0 = performance.now();
       const metadata = await fetchUserMetadata(username, prevScanRecord?.timestamp);
       setAvatarUrl(metadata.avatarUrl);
-      
-      const geminiResult = await analyzeRepoWithGemini(metadata, prevScanRecord);
+      setTimingLogs(prev => [...prev, { label: LOADING_STEP_LABELS[1], ms: Math.round(performance.now() - t0) }]);
+      setLoadingStep(2);
+
+      // Step 2: Deterministic node detection (instant)
+      t0 = performance.now();
+      const detectedNodes = detectAcquiredNodes(metadata);
+      setTimingLogs(prev => [...prev, { label: LOADING_STEP_LABELS[2], ms: Math.round(performance.now() - t0) }]);
+      setLoadingStep(3);
+
+      // Step 3: Gemini API
+      t0 = performance.now();
+      const geminiResult = await analyzeRepoWithGemini(metadata, detectedNodes, prevScanRecord);
+      setTimingLogs(prev => [...prev, { label: LOADING_STEP_LABELS[3], ms: Math.round(performance.now() - t0) }]);
+      setLoadingStep(4);
+
       setCustomAnalysisResult(geminiResult);
+      setAnalysisResultSource('fresh');
     } catch (err: any) {
       console.error(err);
+      if (prevScanRecord) {
+        setAvatarUrl(prevScanRecord.avatarUrl);
+        setSavedScanId(prevScanRecord.id || null);
+        setPreviousScan(null);
+        setCustomAnalysisResult(toAnalysisResult(prevScanRecord));
+        setAnalysisResultSource('fallback');
+        setLoadingStep(4);
+        return;
+      }
       setErrorMessage(err.message || '解析中にエラーが発生しました。');
       setScreen('input');
     }
@@ -163,6 +245,7 @@ export default function App() {
   // Trigger simulated delta growth demo
   const handleSimulateGrowth = () => {
     setIsDemoGrowthActive(true);
+    setAnalysisResultSource(null);
     setScreen('loading');
     setLoadingStep(0);
     setErrorMessage(null);
@@ -207,8 +290,8 @@ export default function App() {
         recommendedNodeIds: ['tailwind', 'aws', 'openai'],
         unlockedNodeIds: ['nextjs', 'docker'],
         customLogs: [
-          '🎉 前回のスキャンから新たに Next.js が導入されました！フロントエンド技術が +13% 成長しました。',
-          '🐳 Dockerfileのコミットを検知！インフラノード Docker が新しく解放されました（インフラ +25%）。',
+          '🎉 前回のスキャンから新たに Next.js が導入されました！フロントエンド技術が一段と強化されています。',
+          '🐳 Dockerfileのコミットを検知！インフラノード Docker が新しく解放されました。',
           'コミット差分により、新たに2つの技術スタックがアンロックされました！素晴らしい成長です！'
         ]
       });
@@ -233,8 +316,8 @@ export default function App() {
         unlockedNodeIds: ['nextjs', 'docker'],
         previousScanId: 'baseline-demo-id',
         customLogs: [
-          '🎉 前回のスキャンから新たに Next.js が導入されました！フロントエンド技術が +13% 成長しました。',
-          '🐳 Dockerfileのコミットを検知！インフラノード Docker が新しく解放されました（インフラ +25%）。',
+          '🎉 前回のスキャンから新たに Next.js が導入されました！フロントエンド技術が一段と強化されています。',
+          '🐳 Dockerfileのコミットを検知！インフラノード Docker が新しく解放されました。',
           'コミット差分により、新たに2つの技術スタックがアンロックされました！素晴らしい成長です！'
         ]
       }).then((docId) => {
@@ -244,57 +327,62 @@ export default function App() {
     }, 3100);
   };
 
-  // Loading logs ticker simulation
+  // Smooth progress bar animation
   useEffect(() => {
     if (screen !== 'loading') return;
 
+    // Target percentages for each step to make it feel smooth
+    const TARGETS = [15, 50, 60, 95, 100];
+    
     const timer = setInterval(() => {
-      setLoadingStep((prev) => {
-        const isLastStep = prev >= LOADING_STEPS.length - 1;
-        
-        if (isLastStep) {
-          if (isUsingAi && !customAnalysisResult) {
-            return prev;
-          }
-          
-          clearInterval(timer);
-          
-          setTimeout(() => {
-            setScreen('result');
-            
-            const params = new URLSearchParams(window.location.search);
-            if (params.get('id') || isDemoGrowthActive) return;
-
-            const activeArchetypeKey = customAnalysisResult ? customAnalysisResult.archetypeKey : archetypeKey;
-            const activeScores = customAnalysisResult ? customAnalysisResult.scores : ARCHETYPES[archetypeKey].scores;
-            const acquiredNodeIds = customAnalysisResult ? customAnalysisResult.acquiredNodeIds : ARCHETYPES[archetypeKey].acquiredNodeIds;
-            const recommendedNodeIds = customAnalysisResult ? customAnalysisResult.recommendedNodeIds : ARCHETYPES[archetypeKey].recommendedNodeIds;
-            const unlockedNodeIds = customAnalysisResult ? customAnalysisResult.unlockedNodeIds : [];
-            const customLogs = customAnalysisResult ? customAnalysisResult.customLogs : ARCHETYPES[archetypeKey].nextSteps;
-
-            saveScan({
-              username: githubUsername,
-              avatarUrl: avatarUrl,
-              timestamp: new Date().toLocaleString('ja-JP'),
-              archetypeKey: activeArchetypeKey,
-              scores: activeScores,
-              acquiredNodeIds,
-              recommendedNodeIds,
-              unlockedNodeIds,
-              previousScanId: previousScan ? (previousScan.id || null) : null,
-              customLogs
-            }).then((docId) => {
-              setSavedScanId(docId);
-            });
-          }, 600);
-          return prev;
-        }
-        return prev + 1;
+      setDisplayProgress(prev => {
+        const target = TARGETS[Math.min(loadingStep, TARGETS.length - 1)];
+        // Ease towards target
+        const diff = target - prev;
+        if (diff <= 0.1) return target;
+        return prev + diff * 0.15; // 15% closer every 50ms
       });
-    }, 450);
+    }, 50);
 
     return () => clearInterval(timer);
-  }, [screen, githubUsername, archetypeKey, isUsingAi, customAnalysisResult, avatarUrl, previousScan, isDemoGrowthActive]);
+  }, [screen, loadingStep]);
+
+  // Transition to result screen when analysis completes
+  useEffect(() => {
+    if (screen !== 'loading' || !customAnalysisResult) return;
+
+    const transitionTimer = setTimeout(() => {
+      setScreen('result');
+
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('id') || isDemoGrowthActive) return;
+      if (analysisResultSource !== 'fresh') return;
+
+      const activeArchetypeKey = customAnalysisResult.archetypeKey;
+      const activeScores = customAnalysisResult.scores;
+      const acquiredNodeIds = customAnalysisResult.acquiredNodeIds;
+      const recommendedNodeIds = customAnalysisResult.recommendedNodeIds;
+      const unlockedNodeIds = customAnalysisResult.unlockedNodeIds;
+      const customLogs = customAnalysisResult.customLogs;
+
+      saveScan({
+        username: githubUsername,
+        avatarUrl: avatarUrl,
+        timestamp: new Date().toISOString(),
+        archetypeKey: activeArchetypeKey,
+        scores: activeScores,
+        acquiredNodeIds,
+        recommendedNodeIds,
+        unlockedNodeIds,
+        previousScanId: previousScan ? (previousScan.id || null) : null,
+        customLogs
+      }).then((docId) => {
+        setSavedScanId(docId);
+      });
+    }, 800);
+
+    return () => clearTimeout(transitionTimer);
+  }, [screen, customAnalysisResult, githubUsername, avatarUrl, previousScan, isDemoGrowthActive, analysisResultSource]);
 
   // Sync React Flow nodes & edges
   useEffect(() => {
@@ -413,6 +501,7 @@ export default function App() {
     setSavedScanId(null);
     setPreviousScan(null);
     setCustomAnalysisResult(null);
+    setAnalysisResultSource(null);
     setScreen('input');
   };
 
@@ -592,19 +681,51 @@ export default function App() {
           <h3 className="text-lg font-bold text-white mb-2 tracking-wide">
             差分データをスキャン中...
           </h3>
+
+          {/* Percentage display */}
+          <div className="w-full mb-4">
+            <div className="flex justify-between items-center mb-1.5">
+              <span className="text-xs text-slate-500 font-mono">Progress</span>
+              <span className="text-sm font-bold text-cyan-400 font-mono">
+                {Math.round(displayProgress)}%
+              </span>
+            </div>
+            <div className="w-full h-2 bg-slate-900 rounded-full overflow-hidden border border-slate-800">
+              <div
+                className="h-full bg-gradient-to-r from-cyan-500 to-indigo-500 rounded-full transition-none"
+                style={{ width: `${displayProgress}%` }}
+              />
+            </div>
+          </div>
           
-          <div className="w-full bg-slate-950 border border-slate-900 rounded-xl p-4 font-mono text-xs text-slate-400 h-36 overflow-hidden shadow-inner flex flex-col justify-end">
+          <div className="w-full bg-slate-950 border border-slate-900 rounded-xl p-4 font-mono text-xs text-slate-400 overflow-hidden shadow-inner">
             <div className="space-y-1.5">
-              {LOADING_STEPS.slice(0, loadingStep + 1).map((step, idx) => (
-                <div key={idx} className="flex items-start gap-2 text-cyan-400/90">
-                  <span className="text-slate-600">{`>`}</span>
-                  <span className={idx === loadingStep ? 'text-white font-bold animate-pulse' : ''}>{step}</span>
+              {/* Completed steps with timing */}
+              {timingLogs.map((log, idx) => (
+                <div key={idx} className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-emerald-400">
+                    <span>✓</span>
+                    <span>{log.label}</span>
+                  </div>
+                  <span className={`font-bold shrink-0 ${log.ms > 2000 ? 'text-amber-400' : log.ms > 500 ? 'text-cyan-400' : 'text-emerald-400'}`}>
+                    {log.ms >= 1000 ? `${(log.ms / 1000).toFixed(1)}s` : `${log.ms}ms`}
+                  </span>
                 </div>
               ))}
-              {(isUsingAi || isDemoGrowthActive) && loadingStep === LOADING_STEPS.length - 1 && !customAnalysisResult && (
-                <div className="flex items-start gap-2 text-indigo-400 animate-pulse">
-                  <span className="text-slate-600">{`>`}</span>
-                  <span>Gemini 2.5 Flash is calculating Growth Delta...</span>
+              {/* Current step (in progress) */}
+              {loadingStep < LOADING_STEP_LABELS.length - 1 && (
+                <div className="flex items-center gap-2 text-indigo-400 animate-pulse">
+                  <span>⟳</span>
+                  <span>{LOADING_STEP_LABELS[loadingStep]} ...</span>
+                </div>
+              )}
+              {/* Total time */}
+              {timingLogs.length === 4 && (
+                <div className="flex items-center justify-between gap-2 border-t border-slate-800 pt-1.5 mt-1.5">
+                  <span className="text-white font-bold">合計</span>
+                  <span className="text-white font-bold">
+                    {(timingLogs.reduce((sum, l) => sum + l.ms, 0) / 1000).toFixed(2)}s
+                  </span>
                 </div>
               )}
             </div>
@@ -660,6 +781,20 @@ export default function App() {
                     {customAnalysisResult ? (previousScan ? 'Growth Delta' : 'Baseline') : 'Mock'}
                   </span>
                 </div>
+                {analysisResultSource && analysisResultSource !== 'fresh' && (
+                  <div className={`mt-3 px-3 py-2.5 rounded-xl border flex items-start gap-2 text-xs ${
+                    analysisResultSource === 'cache'
+                      ? 'bg-cyan-500/10 border-cyan-500/20 text-cyan-100'
+                      : 'bg-amber-500/10 border-amber-500/20 text-amber-100'
+                  }`}>
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <p>
+                      {analysisResultSource === 'cache'
+                        ? '10分以内の前回スキャンを表示中です。GitHub API と Gemini API は呼び出していません。'
+                        : 'API の呼び出しに失敗したため、前回スキャンの結果を表示しています。'}
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Archetype Description */}

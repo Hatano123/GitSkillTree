@@ -13,8 +13,73 @@ export interface AnalysisResult {
   customLogs: string[];
 }
 
+// All possible node IDs for recommendation candidates
+const ALL_NODE_IDS = [
+  'git', 'html_css', 'javascript', 'typescript', 'react', 'nextjs', 'tailwind',
+  'nodejs', 'express', 'postgresql', 'docker', 'aws', 'github_actions',
+  'python', 'pytorch', 'openai', 'langchain'
+];
+
+const ARCHETYPE_KEYS = ['frontend', 'ai', 'devops', 'fullstack'] as const;
+const SCORE_SUBJECTS = ['ネットワーク', 'インフラ', 'バックエンド', 'フロントエンド', 'AI'];
+
+function validateGeminiResponse(value: unknown, candidateNodes: string[]) {
+  if (!value || typeof value !== 'object') {
+    throw new Error('Gemini response is not an object.');
+  }
+
+  const response = value as Record<string, unknown>;
+  if (!ARCHETYPE_KEYS.includes(response.archetypeKey as typeof ARCHETYPE_KEYS[number])) {
+    throw new Error('Gemini response has an invalid archetype.');
+  }
+
+  if (!Array.isArray(response.scores) || response.scores.length !== SCORE_SUBJECTS.length) {
+    throw new Error('Gemini response has invalid scores.');
+  }
+
+  const scores = response.scores.map((score, index) => {
+    if (!score || typeof score !== 'object') {
+      throw new Error('Gemini response has an invalid score entry.');
+    }
+    const entry = score as Record<string, unknown>;
+    if (
+      entry.subject !== SCORE_SUBJECTS[index] ||
+      typeof entry.A !== 'number' || !Number.isFinite(entry.A) || entry.A < 0 || entry.A > 100 ||
+      entry.fullMark !== 100
+    ) {
+      throw new Error('Gemini response has an invalid score value.');
+    }
+    return { subject: entry.subject, A: entry.A, fullMark: entry.fullMark };
+  });
+
+  if (
+    !Array.isArray(response.recommendedNodeIds) ||
+    response.recommendedNodeIds.length > 3 ||
+    new Set(response.recommendedNodeIds).size !== response.recommendedNodeIds.length ||
+    !response.recommendedNodeIds.every((id) => typeof id === 'string' && candidateNodes.includes(id))
+  ) {
+    throw new Error('Gemini response has invalid recommendations.');
+  }
+
+  if (
+    !Array.isArray(response.customLogs) ||
+    response.customLogs.length !== 3 ||
+    !response.customLogs.every((log) => typeof log === 'string' && log.trim().length > 0)
+  ) {
+    throw new Error('Gemini response has invalid feedback.');
+  }
+
+  return {
+    archetypeKey: response.archetypeKey as AnalysisResult['archetypeKey'],
+    scores,
+    recommendedNodeIds: response.recommendedNodeIds as string[],
+    customLogs: response.customLogs as string[]
+  };
+}
+
 export async function analyzeRepoWithGemini(
   metadata: UserMetadata,
+  detectedNodeIds: string[],
   previousScan: ScanRecord | null = null
 ): Promise<AnalysisResult> {
   if (!API_KEY) {
@@ -23,98 +88,46 @@ export async function analyzeRepoWithGemini(
 
   const genAI = new GoogleGenerativeAI(API_KEY);
   const model = genAI.getGenerativeModel({ 
-    model: 'gemini-2.5-flash',
+    model: 'gemini-3.1-flash-lite',
     generationConfig: {
       responseMimeType: 'application/json'
     }
   });
 
-  // Prepare a condensed list of repositories to stay well within limits
-  const repoSummary = metadata.repositories.slice(0, 20).map(r => 
-    `- ${r.name}: ${r.language || 'N/A'} (★${r.stars})`
-  ).join('\n');
+  // Determine unlocked nodes (new since last scan)
+  const unlockedNodeIds = previousScan
+    ? detectedNodeIds.filter(id => !previousScan.acquiredNodeIds.includes(id))
+    : [];
 
-  // Format previous scan baseline
-  const previousScanPromptSection = previousScan ? `
-【前回のスキャンデータ (ベースライン)】
-- 前回のスキャン日時: ${previousScan.timestamp}
-- 前回の適性スコア: ${JSON.stringify(previousScan.scores)}
-- 前回の習得ノードID一覧: ${JSON.stringify(previousScan.acquiredNodeIds)}
-- 前回の推奨ノードID一覧: ${JSON.stringify(previousScan.recommendedNodeIds)}
-` : `【前回のスキャンデータ】: なし（これが初めての解析・ベースライン作成です）`;
+  // Candidate nodes for recommendation (not yet acquired)
+  const candidateNodes = ALL_NODE_IDS.filter(id => !detectedNodeIds.includes(id));
 
-  // Format recent events since last scan
-  const recentEventsPromptSection = metadata.recentEvents.length > 0 
-    ? metadata.recentEvents.map(e => 
-        `[${e.createdAt}] ${e.type} on ${e.repoName}: ${e.commits.length > 0 ? `Commits: ${JSON.stringify(e.commits)}` : 'No commit msg'}`
-      ).join('\n')
-    : '前回のスキャン以降、新しいコミットやアクティビティは検知されませんでした。';
+  // Compact previous scores (only the numbers)
+  const prevScoresCompact = previousScan
+    ? previousScan.scores.map(s => `${s.subject}:${s.A}`).join(', ')
+    : null;
 
-  const prompt = `
-あなたはGitHubプロフィールの解析を行い、開発者の適性スコアとスキル習得マップを作成する高度なAI成長アナライザーです。
-データベースに記録された前回のデータと、今回スキャンされた差分コミットデータを元に、インクリメンタルな経験値（スコア加算）とノードアンロック処理を行います。
+  const hasNoNewCommits = previousScan && metadata.recentEvents.length === 0;
 
-ユーザー名: ${metadata.username}
-公開リポジトリ総数: ${metadata.publicReposCount}
+  // Build ultra-slim prompt
+  const prompt = `開発者スキル評価AI。以下のデータからスコアリングと助言を行ってください。
 
-【前回のデータ】
-${previousScanPromptSection}
+ユーザー: ${metadata.username} (公開リポ${metadata.publicReposCount}件)
+検出済み技術: [${detectedNodeIds.join(', ')}]
+言語分布: ${JSON.stringify(metadata.aggregatedLanguages)}
+主要パッケージ: [${metadata.packageJsonDeps.slice(0, 15).join(', ')}]
+${prevScoresCompact ? `前回スコア: ${prevScoresCompact}` : '初回スキャン'}
+${unlockedNodeIds.length > 0 ? `今回新規解放: [${unlockedNodeIds.join(', ')}]` : ''}
 
-【前回のスキャン以降に検知された新規アクティビティ・コミット履歴】
-${recentEventsPromptSection}
+回答:
+1. scores: 5カテゴリ(ネットワーク,インフラ,バックエンド,フロントエンド,AI)を0-100で算出。${hasNoNewCommits ? '【重要】新規コミット差分がないため、必ず前回スコアと全く同じ数値を維持し、無理な加算をしないでください。' : (prevScoresCompact ? '前回スコア以上の値で成長分を加算してください。' : '')}
+2. recommendedNodeIds: 未習得[${candidateNodes.join(', ')}]から次におすすめ最大3つ
+3. archetypeKey: frontend/ai/devops/fullstackから1つ
+4. customLogs: ${hasNoNewCommits ? '「新規コミット差分がありませんでした。開発を続けて次に期待しましょう！」といった励ましの' : (unlockedNodeIds.length > 0 ? `新規解放ノード(${unlockedNodeIds.join(',')})を祝う` : '現状の')}成長コメント3つ(日本語、${metadata.username}さん宛て)。注意点として、「○%成長しました」などの不自然な数値表現は避け、定性的に成長を褒める自然なテキストにしてください。
 
-【全体リポジトリ要約】
-${repoSummary}
-
-【言語構成統計】
-${JSON.stringify(metadata.aggregatedLanguages)}
-
-【主要パッケージ依存関係】
-${JSON.stringify(metadata.packageJsonDeps)}
-
----
-
-これらの情報に基づいて、現在の「適性 (Radar Chart)」および「マスター・スキルツリー (Skill Tree)」に反映させる状態を判定してください。
-
-## 選択可能な技術ノードID一覧:
-- 'git': Git
-- 'html_css': HTML/CSS
-- 'javascript': JavaScript
-- 'typescript': TypeScript
-- 'react': React
-- 'nextjs': Next.js
-- 'tailwind': Tailwind CSS
-- 'nodejs': Node.js
-- 'express': Express
-- 'postgresql': PostgreSQL
-- 'docker': Docker
-- 'aws': AWS
-- 'github_actions': GitHub Actions
-- 'python': Python
-- 'pytorch': PyTorch
-- 'openai': OpenAI API
-- 'langchain': LangChain
-
-## 判定・差分加算のルール:
-1. **acquiredNodeIds**: メタデータ（新規コミット差分、言語分布、主要な依存パッケージ）から実際に使われていると合理的に判断されるノードIDを格納してください。
-2. **unlockedNodeIds**: 
-   - 前回のスキャンが存在する場合：前回は未習得（'recommended' または 'locked'）だったが、今回の「新規コミット差分」または最新コードから新しく使われていることが確認できたノードIDのみを格納してください。
-   - 初回の場合、または今回新規に解放されたものがない場合は空配列 \`[]\` にしてください。
-3. **recommendedNodeIds**: 取得済みのノードから見て「次におすすめすべき技術ノード」を最大3つ選んでください。
-4. **scores (経験値加算システム)**:
-   - 前回のデータが存在する場合：前回のスコアをベースラインとし、上記【新規アクティビティ・コミット履歴】で検知された開発量（コミットされたファイルの内容やコミットメッセージ）に応じて、経験値をプラス加算（例：インフラに関連するコミットがあれば「インフラ: +8」など）して新しいスコアを決定してください。
-   - 新規アクティビティ・コミットがない場合、スコアは前回と「同値」に据え置いてください（減らさないでください）。上限は100です。
-   - 初回の場合：現在のスキルセットの量から 0〜100 の範囲で算出してください。
-   - 科目：ネットワーク、インフラ、バックエンド、フロントエンド、AI
-5. **archetypeKey**: 4つのカテゴリ ('frontend', 'ai', 'devops', 'fullstack') から最も強みのあるものを1つ選んでください。
-6. **customLogs (成長フィードバック)**:
-   - 前回のスキャンから何が変化したかに特化した、お祝いや成長のフィードバックコメント（日本語）を3〜4つ出力してください（例:「ユーザー名 さんの最新コミットを検知！Next.jsのルーティング実装を確認したため、フロントエンド経験値 +12 加算！ノード Next.js がアンロックされました！」など）。
-   - コミットが無い場合：「新たにコミットされた差分コードはありません。学習を続けて、次のコミット後に再度スキャンしましょう！」などと励ましてください。
-
-以下のJSONフォーマットで回答してください。余分なキーやマークダウンのコードブロック指示子は含めず、純粋なJSON文字列として出力してください。
-
+JSON形式:
 {
-  "archetypeKey": "frontend" | "ai" | "devops" | "fullstack",
+  "archetypeKey": string,
   "scores": [
     { "subject": "ネットワーク", "A": number, "fullMark": 100 },
     { "subject": "インフラ", "A": number, "fullMark": 100 },
@@ -122,9 +135,7 @@ ${JSON.stringify(metadata.packageJsonDeps)}
     { "subject": "フロントエンド", "A": number, "fullMark": 100 },
     { "subject": "AI", "A": number, "fullMark": 100 }
   ],
-  "acquiredNodeIds": string[],
   "recommendedNodeIds": string[],
-  "unlockedNodeIds": string[],
   "customLogs": string[]
 }
 `;
@@ -134,9 +145,20 @@ ${JSON.stringify(metadata.packageJsonDeps)}
   
   try {
     const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-    return JSON.parse(cleanJson) as AnalysisResult;
+    const parsed = validateGeminiResponse(JSON.parse(cleanJson), candidateNodes);
+
+    // Merge client-side detection with AI scoring
+    return {
+      archetypeKey: parsed.archetypeKey,
+      scores: parsed.scores,
+      acquiredNodeIds: detectedNodeIds,      // From client-side detection (deterministic)
+      recommendedNodeIds: parsed.recommendedNodeIds,
+      unlockedNodeIds: unlockedNodeIds,       // Computed client-side (deterministic)
+      customLogs: parsed.customLogs
+    } as AnalysisResult;
   } catch (e) {
     console.error('Failed to parse Gemini JSON output:', responseText, e);
     throw new Error('解析データのJSON変換に失敗しました。');
   }
 }
+
