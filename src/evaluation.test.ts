@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { evaluateNodes } from './evaluation.ts';
+import { evaluateNodes, getScoreBreakdown } from './evaluation.ts';
 
 const detected = ['react', 'git', 'typescript', 'javascript', 'docker', 'express', 'nodejs'];
 
@@ -16,4 +16,10 @@ test('scores come from nodes and new nodes are calculated from the previous scan
   const unchanged = evaluateNodes(previous.acquiredNodeIds, previous);
   assert.deepEqual(unchanged.unlockedNodeIds, []);
   assert.deepEqual(unchanged.scores, evaluateNodes(previous.acquiredNodeIds).scores);
+});
+
+test('breakdown exposes every fixed score rule and its actual contribution', () => {
+  const backend = getScoreBreakdown(['typescript', 'nodejs', 'express']).find((item) => item.subject === 'バックエンド');
+  assert.equal(backend?.score, 70);
+  assert.deepEqual(backend?.contributions.filter((item) => item.acquired).map((item) => item.nodeId), ['nodejs', 'express', 'typescript']);
 });

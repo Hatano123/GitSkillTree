@@ -8,6 +8,13 @@ export interface DeterministicEvaluation {
   unlockedNodeIds: string[];
 }
 
+export interface ScoreBreakdown {
+  subject: string;
+  score: number;
+  fullMark: number;
+  contributions: { nodeId: string; points: number; acquired: boolean }[];
+}
+
 const NODE_IDS = ['git', 'html_css', 'javascript', 'typescript', 'react', 'nextjs', 'tailwind', 'nodejs', 'express', 'postgresql', 'docker', 'aws', 'github_actions', 'python', 'pytorch', 'openai', 'langchain'] as const;
 const SCORE_RULES = [
   { subject: 'ネットワーク', nodes: { git: 30, github_actions: 40, aws: 30 } },
@@ -45,6 +52,24 @@ export function evaluateNodes(detectedNodeIds: readonly string[], previousScan: 
     recommendedNodeIds: RECOMMENDATION_ORDER.filter((id) => !acquired.has(id)).slice(0, 3),
     unlockedNodeIds: previousScan ? acquiredNodeIds.filter((id) => !previous.has(id)) : [],
   };
+}
+
+/** Returns the same fixed point rules used for the radar chart, for UI disclosure. */
+export function getScoreBreakdown(acquiredNodeIds: readonly string[]): ScoreBreakdown[] {
+  const acquired = new Set(acquiredNodeIds);
+  return SCORE_RULES.map((rule) => {
+    const contributions = Object.entries(rule.nodes).map(([nodeId, points]) => ({
+      nodeId,
+      points,
+      acquired: acquired.has(nodeId),
+    }));
+    return {
+      subject: rule.subject,
+      score: scoreFor(rule.nodes, acquired),
+      fullMark: 100,
+      contributions,
+    };
+  });
 }
 
 export function fallbackExplanation(username: string, unlockedNodeIds: readonly string[]): string[] {

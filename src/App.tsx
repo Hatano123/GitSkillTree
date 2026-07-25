@@ -26,7 +26,7 @@ import { fetchUserMetadata } from './github';
 import { detectAcquiredNodes } from './detectNodes';
 import { generateExplanationWithGemini } from './gemini';
 import type { AnalysisResult } from './gemini';
-import { evaluateNodes, fallbackExplanation } from './evaluation';
+import { evaluateNodes, fallbackExplanation, getScoreBreakdown } from './evaluation';
 import type { ScanRecord } from './types';
 
 const GithubIcon = () => (
@@ -85,6 +85,7 @@ export default function App() {
   const [avatarUrl, setAvatarUrl] = useState<string>('');
   const [isShareCopied, setIsShareCopied] = useState(false);
   const [isDemoGrowthActive, setIsDemoGrowthActive] = useState(false);
+  const [isScoreBreakdownOpen, setIsScoreBreakdownOpen] = useState(false);
 
   // Flow State
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
@@ -492,6 +493,12 @@ export default function App() {
     });
   }, [archetype, previousScan]);
 
+  const scoreBreakdown = useMemo(() => {
+    const acquiredNodeIds = customAnalysisResult?.acquiredNodeIds
+      ?? (ARCHETYPES[archetypeKey] || ARCHETYPES.frontend).acquiredNodeIds;
+    return getScoreBreakdown(acquiredNodeIds);
+  }, [archetypeKey, customAnalysisResult]);
+
   const handleCopyLink = () => {
     const idToShare = savedScanId;
     if (!idToShare) return;
@@ -835,6 +842,15 @@ export default function App() {
                       <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: archetype.accentColor }} />
                       今回
                     </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsScoreBreakdownOpen((open) => !open)}
+                      aria-expanded={isScoreBreakdownOpen}
+                      className="ml-1 inline-flex items-center gap-1 rounded border border-cyan-500/30 bg-cyan-500/10 px-2 py-1 text-cyan-300 hover:bg-cyan-500/20 transition-colors"
+                    >
+                      <Info className="w-3 h-3" />
+                      評価の根拠
+                    </button>
                   </div>
                 </div>
 
@@ -872,6 +888,32 @@ export default function App() {
                     </RadarChart>
                   </ResponsiveContainer>
                 </div>
+
+                {isScoreBreakdownOpen && (
+                  <div className="mt-3 space-y-2 rounded-xl border border-cyan-500/20 bg-slate-950/80 p-3 text-xs">
+                    <p className="text-slate-300 leading-relaxed">
+                      グラフは点灯ノードの固定配点を合計して算出します。Gemini の出力はこの値に影響しません。
+                    </p>
+                    {scoreBreakdown.map((category) => (
+                      <div key={category.subject} className="rounded-lg border border-slate-800 bg-slate-900/50 p-2.5">
+                        <div className="flex items-center justify-between font-semibold text-slate-100">
+                          <span>{category.subject}</span>
+                          <span className="font-mono text-cyan-300">{category.score} / {category.fullMark}</span>
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {category.contributions.map((contribution) => (
+                            <span
+                              key={contribution.nodeId}
+                              className={`rounded px-1.5 py-0.5 font-mono text-[10px] ${contribution.acquired ? 'bg-emerald-500/15 text-emerald-300' : 'bg-slate-800 text-slate-500'}`}
+                            >
+                              {contribution.acquired ? '+' : '0 '} {contribution.points} {contribution.nodeId}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* AI Findings or Next Stack Recommendations */}
