@@ -38,8 +38,9 @@ const NODE_DETECTION_RULES: Record<string, {
     deps: ['tailwindcss', '@tailwindcss/vite', '@tailwindcss/postcss'],
   },
   nodejs: {
+    // JavaScript/TypeScript alone can be browser-only projects. Require a
+    // server-side runtime or framework dependency before granting Node.js.
     deps: ['express', 'koa', 'fastify', 'hapi', 'nest', '@nestjs/core', 'http-server'],
-    languages: ['JavaScript', 'TypeScript'],
   },
   express: {
     deps: ['express'],
@@ -123,12 +124,6 @@ export function detectAcquiredNodes(metadata: UserMetadata): string[] {
     if (detected) {
       acquired.push(nodeId);
     }
-  }
-
-  // Special case: nodejs is acquired if user has JS or TS repos with deps
-  // (already handled by the combo rule above, but enforce it)
-  if (!acquired.includes('nodejs') && (languages.has('JavaScript') || languages.has('TypeScript')) && deps.size > 0) {
-    acquired.push('nodejs');
   }
 
   return acquired;

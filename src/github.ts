@@ -144,34 +144,39 @@ export async function fetchUserMetadata(username: string, sinceTimestamp?: strin
 
   const packageJsonDepsSet = new Set<string>();
 
-  for (const repo of topRepos) {
-    try {
+  const packageResults = await Promise.allSettled(
+    topRepos.map(async (repo) => {
       const pkgRes = await fetch(`https://api.github.com/repos/${cleanUsername}/${repo.name}/contents/package.json`);
-      if (pkgRes.ok) {
-        const pkgData = await pkgRes.json();
-        if (pkgData.content) {
-          const decoded = decodeURIComponent(escape(atob(pkgData.content.replace(/\s/g, ''))));
-          const parsedPkg = JSON.parse(decoded);
-          const deps = {
-            ...parsedPkg.dependencies,
-            ...parsedPkg.devDependencies
-          };
-          
-          const noisePackages = [
-            'typescript', 'eslint', 'prettier', 'ts-node', 'nodemon', 'husky', 'lint-staged'
-          ];
-          
-          Object.keys(deps).forEach((dep) => {
-            if (!dep.startsWith('@types/') && !noisePackages.some(n => dep.includes(n))) {
-              packageJsonDepsSet.add(dep);
-            }
-          });
-        }
-      }
-  } catch {
-    console.log(`No package.json in ${repo.name}`);
-  }
-  }
+      if (!pkgRes.ok) return [];
+
+      const pkgData = await pkgRes.json();
+      if (!pkgData.content) return [];
+
+      const decoded = decodeURIComponent(escape(atob(pkgData.content.replace(/\s/g, ''))));
+      const parsedPkg = JSON.parse(decoded);
+      const deps = {
+        ...parsedPkg.dependencies,
+        ...parsedPkg.devDependencies
+      };
+
+      const noisePackages = [
+        'typescript', 'eslint', 'prettier', 'ts-node', 'nodemon', 'husky', 'lint-staged'
+      ];
+
+      return Object.keys(deps).filter((dep) =>
+        !dep.startsWith('@types/') && !noisePackages.some((noisePackage) => dep.includes(noisePackage))
+      );
+    })
+  );
+
+  // A missing or malformed package.json must not block analysis of other repos.
+  packageResults.forEach((result) => {
+    if (result.status === 'fulfilled') {
+      result.value.forEach((dep) => packageJsonDepsSet.add(dep));
+    } else {
+      console.warn('Failed to read a repository package.json:', result.reason);
+    }
+  });
 
   return {
     username: userData.login,

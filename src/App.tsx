@@ -39,6 +39,25 @@ const nodeTypes = {
   custom: CustomNode,
 };
 
+const SCAN_CACHE_DURATION_MS = 10 * 60 * 1000;
+type AnalysisResultSource = 'fresh' | 'cache' | 'fallback' | null;
+
+function toAnalysisResult(scan: ScanRecord): AnalysisResult {
+  return {
+    archetypeKey: scan.archetypeKey as AnalysisResult['archetypeKey'],
+    scores: scan.scores,
+    acquiredNodeIds: scan.acquiredNodeIds,
+    recommendedNodeIds: scan.recommendedNodeIds,
+    unlockedNodeIds: scan.unlockedNodeIds,
+    customLogs: scan.customLogs,
+  };
+}
+
+function isScanCacheValid(scan: ScanRecord): boolean {
+  const timestamp = new Date(scan.timestamp).getTime();
+  return Number.isFinite(timestamp) && Date.now() - timestamp >= 0 && Date.now() - timestamp < SCAN_CACHE_DURATION_MS;
+}
+
 const LOADING_STEP_LABELS = [
   'Firestore: 前回スキャン検索',
   'GitHub API: リポジトリ取得',
@@ -59,6 +78,7 @@ export default function App() {
   // Growth & Analysis States
   const [previousScan, setPreviousScan] = useState<ScanRecord | null>(null);
   const [customAnalysisResult, setCustomAnalysisResult] = useState<AnalysisResult | null>(null);
+  const [analysisResultSource, setAnalysisResultSource] = useState<AnalysisResultSource>(null);
   const [isUsingAi, setIsUsingAi] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string>('');
@@ -121,6 +141,7 @@ export default function App() {
     setAvatarUrl('');
     setPreviousScan(null);
     setCustomAnalysisResult(null);
+    setAnalysisResultSource(null);
   };
 
   // Start analysis
@@ -136,6 +157,7 @@ export default function App() {
     setErrorMessage(null);
     setCustomAnalysisResult(null);
     setPreviousScan(null);
+    setAnalysisResultSource(null);
 
     const mockTemplate = MOCK_REPOS.find(r => r.username === username);
 
@@ -155,19 +177,32 @@ export default function App() {
           unlockedNodeIds: [],
           customLogs: mockArchetype.nextSteps
         });
+        setAnalysisResultSource('fresh');
       }, 400);
       return;
     }
 
     setIsUsingAi(true);
+    let prevScanRecord: ScanRecord | null = null;
     try {
       // Step 0: Firestore lookup
       let t0 = performance.now();
-      const prevScanRecord = await getLatestScanByUsername(username);
+      prevScanRecord = await getLatestScanByUsername(username);
       if (prevScanRecord) {
         setPreviousScan(prevScanRecord);
       }
       setTimingLogs(prev => [...prev, { label: LOADING_STEP_LABELS[0], ms: Math.round(performance.now() - t0) }]);
+
+      if (prevScanRecord && isScanCacheValid(prevScanRecord)) {
+        setAvatarUrl(prevScanRecord.avatarUrl);
+        setSavedScanId(prevScanRecord.id || null);
+        setPreviousScan(null);
+        setCustomAnalysisResult(toAnalysisResult(prevScanRecord));
+        setAnalysisResultSource('cache');
+        setLoadingStep(4);
+        return;
+      }
+
       setLoadingStep(1);
 
       // Step 1: GitHub API
@@ -190,8 +225,18 @@ export default function App() {
       setLoadingStep(4);
 
       setCustomAnalysisResult(geminiResult);
+      setAnalysisResultSource('fresh');
     } catch (err: any) {
       console.error(err);
+      if (prevScanRecord) {
+        setAvatarUrl(prevScanRecord.avatarUrl);
+        setSavedScanId(prevScanRecord.id || null);
+        setPreviousScan(null);
+        setCustomAnalysisResult(toAnalysisResult(prevScanRecord));
+        setAnalysisResultSource('fallback');
+        setLoadingStep(4);
+        return;
+      }
       setErrorMessage(err.message || '解析中にエラーが発生しました。');
       setScreen('input');
     }
@@ -200,6 +245,7 @@ export default function App() {
   // Trigger simulated delta growth demo
   const handleSimulateGrowth = () => {
     setIsDemoGrowthActive(true);
+    setAnalysisResultSource(null);
     setScreen('loading');
     setLoadingStep(0);
     setErrorMessage(null);
@@ -310,6 +356,7 @@ export default function App() {
 
       const params = new URLSearchParams(window.location.search);
       if (params.get('id') || isDemoGrowthActive) return;
+      if (analysisResultSource !== 'fresh') return;
 
       const activeArchetypeKey = customAnalysisResult.archetypeKey;
       const activeScores = customAnalysisResult.scores;
@@ -321,7 +368,7 @@ export default function App() {
       saveScan({
         username: githubUsername,
         avatarUrl: avatarUrl,
-        timestamp: new Date().toLocaleString('ja-JP'),
+        timestamp: new Date().toISOString(),
         archetypeKey: activeArchetypeKey,
         scores: activeScores,
         acquiredNodeIds,
@@ -335,7 +382,7 @@ export default function App() {
     }, 800);
 
     return () => clearTimeout(transitionTimer);
-  }, [screen, customAnalysisResult, githubUsername, avatarUrl, previousScan, isDemoGrowthActive]);
+  }, [screen, customAnalysisResult, githubUsername, avatarUrl, previousScan, isDemoGrowthActive, analysisResultSource]);
 
   // Sync React Flow nodes & edges
   useEffect(() => {
@@ -454,6 +501,7 @@ export default function App() {
     setSavedScanId(null);
     setPreviousScan(null);
     setCustomAnalysisResult(null);
+    setAnalysisResultSource(null);
     setScreen('input');
   };
 
@@ -733,6 +781,20 @@ export default function App() {
                     {customAnalysisResult ? (previousScan ? 'Growth Delta' : 'Baseline') : 'Mock'}
                   </span>
                 </div>
+                {analysisResultSource && analysisResultSource !== 'fresh' && (
+                  <div className={`mt-3 px-3 py-2.5 rounded-xl border flex items-start gap-2 text-xs ${
+                    analysisResultSource === 'cache'
+                      ? 'bg-cyan-500/10 border-cyan-500/20 text-cyan-100'
+                      : 'bg-amber-500/10 border-amber-500/20 text-amber-100'
+                  }`}>
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <p>
+                      {analysisResultSource === 'cache'
+                        ? '10分以内の前回スキャンを表示中です。GitHub API と Gemini API は呼び出していません。'
+                        : 'API の呼び出しに失敗したため、前回スキャンの結果を表示しています。'}
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Archetype Description */}
