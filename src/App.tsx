@@ -24,8 +24,9 @@ import { ARCHETYPES, INITIAL_NODES, INITIAL_EDGES, MOCK_REPOS } from './mockData
 import { saveScan, getScanById, getLatestScanByUsername } from './firebase';
 import { fetchUserMetadata } from './github';
 import { detectAcquiredNodes } from './detectNodes';
-import { analyzeRepoWithGemini } from './gemini';
+import { generateExplanationWithGemini } from './gemini';
 import type { AnalysisResult } from './gemini';
+import { evaluateNodes, fallbackExplanation, getScoreBreakdown } from './evaluation';
 import type { ScanRecord } from './types';
 
 const GithubIcon = () => (
@@ -62,7 +63,7 @@ const LOADING_STEP_LABELS = [
   'Firestore: 前回スキャン検索',
   'GitHub API: リポジトリ取得',
   'ノード検出 (クライアント)',
-  'Gemini API: スコアリング',
+  'Gemini API: 説明文生成',
   '完了'
 ];
 
@@ -84,6 +85,7 @@ export default function App() {
   const [avatarUrl, setAvatarUrl] = useState<string>('');
   const [isShareCopied, setIsShareCopied] = useState(false);
   const [isDemoGrowthActive, setIsDemoGrowthActive] = useState(false);
+  const [isScoreBreakdownOpen, setIsScoreBreakdownOpen] = useState(false);
 
   // Flow State
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
@@ -218,13 +220,19 @@ export default function App() {
       setTimingLogs(prev => [...prev, { label: LOADING_STEP_LABELS[2], ms: Math.round(performance.now() - t0) }]);
       setLoadingStep(3);
 
-      // Step 3: Gemini API
+      // Step 3: evaluate deterministically, then ask Gemini for wording only.
       t0 = performance.now();
-      const geminiResult = await analyzeRepoWithGemini(metadata, detectedNodes, prevScanRecord);
+      const evaluation = evaluateNodes(detectedNodes, prevScanRecord);
+      let customLogs = fallbackExplanation(metadata.username, evaluation.unlockedNodeIds);
+      try {
+        customLogs = await generateExplanationWithGemini(metadata, evaluation);
+      } catch (geminiError) {
+        console.warn('Gemini explanation failed; showing deterministic evaluation.', geminiError);
+      }
       setTimingLogs(prev => [...prev, { label: LOADING_STEP_LABELS[3], ms: Math.round(performance.now() - t0) }]);
       setLoadingStep(4);
 
-      setCustomAnalysisResult(geminiResult);
+      setCustomAnalysisResult({ ...evaluation, customLogs });
       setAnalysisResultSource('fresh');
     } catch (err: any) {
       console.error(err);
@@ -484,6 +492,12 @@ export default function App() {
       };
     });
   }, [archetype, previousScan]);
+
+  const scoreBreakdown = useMemo(() => {
+    const acquiredNodeIds = customAnalysisResult?.acquiredNodeIds
+      ?? (ARCHETYPES[archetypeKey] || ARCHETYPES.frontend).acquiredNodeIds;
+    return getScoreBreakdown(acquiredNodeIds);
+  }, [archetypeKey, customAnalysisResult]);
 
   const handleCopyLink = () => {
     const idToShare = savedScanId;
@@ -828,6 +842,15 @@ export default function App() {
                       <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: archetype.accentColor }} />
                       今回
                     </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsScoreBreakdownOpen((open) => !open)}
+                      aria-expanded={isScoreBreakdownOpen}
+                      className="ml-1 inline-flex items-center gap-1 rounded border border-cyan-500/30 bg-cyan-500/10 px-2 py-1 text-cyan-300 hover:bg-cyan-500/20 transition-colors"
+                    >
+                      <Info className="w-3 h-3" />
+                      評価の根拠
+                    </button>
                   </div>
                 </div>
 
@@ -865,6 +888,32 @@ export default function App() {
                     </RadarChart>
                   </ResponsiveContainer>
                 </div>
+
+                {isScoreBreakdownOpen && (
+                  <div className="mt-3 space-y-2 rounded-xl border border-cyan-500/20 bg-slate-950/80 p-3 text-xs">
+                    <p className="text-slate-300 leading-relaxed">
+                      グラフは点灯ノードの固定配点を合計して算出します。Gemini の出力はこの値に影響しません。
+                    </p>
+                    {scoreBreakdown.map((category) => (
+                      <div key={category.subject} className="rounded-lg border border-slate-800 bg-slate-900/50 p-2.5">
+                        <div className="flex items-center justify-between font-semibold text-slate-100">
+                          <span>{category.subject}</span>
+                          <span className="font-mono text-cyan-300">{category.score} / {category.fullMark}</span>
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {category.contributions.map((contribution) => (
+                            <span
+                              key={contribution.nodeId}
+                              className={`rounded px-1.5 py-0.5 font-mono text-[10px] ${contribution.acquired ? 'bg-emerald-500/15 text-emerald-300' : 'bg-slate-800 text-slate-500'}`}
+                            >
+                              {contribution.acquired ? '+' : '0 '} {contribution.points} {contribution.nodeId}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* AI Findings or Next Stack Recommendations */}
