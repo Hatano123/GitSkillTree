@@ -24,8 +24,9 @@ import { ARCHETYPES, INITIAL_NODES, INITIAL_EDGES, MOCK_REPOS } from './mockData
 import { saveScan, getScanById, getLatestScanByUsername } from './firebase';
 import { fetchUserMetadata } from './github';
 import { detectAcquiredNodes } from './detectNodes';
-import { analyzeRepoWithGemini } from './gemini';
+import { generateExplanationWithGemini } from './gemini';
 import type { AnalysisResult } from './gemini';
+import { evaluateNodes, fallbackExplanation } from './evaluation';
 import type { ScanRecord } from './types';
 
 const GithubIcon = () => (
@@ -62,7 +63,7 @@ const LOADING_STEP_LABELS = [
   'Firestore: 前回スキャン検索',
   'GitHub API: リポジトリ取得',
   'ノード検出 (クライアント)',
-  'Gemini API: スコアリング',
+  'Gemini API: 説明文生成',
   '完了'
 ];
 
@@ -218,13 +219,19 @@ export default function App() {
       setTimingLogs(prev => [...prev, { label: LOADING_STEP_LABELS[2], ms: Math.round(performance.now() - t0) }]);
       setLoadingStep(3);
 
-      // Step 3: Gemini API
+      // Step 3: evaluate deterministically, then ask Gemini for wording only.
       t0 = performance.now();
-      const geminiResult = await analyzeRepoWithGemini(metadata, detectedNodes, prevScanRecord);
+      const evaluation = evaluateNodes(detectedNodes, prevScanRecord);
+      let customLogs = fallbackExplanation(metadata.username, evaluation.unlockedNodeIds);
+      try {
+        customLogs = await generateExplanationWithGemini(metadata, evaluation);
+      } catch (geminiError) {
+        console.warn('Gemini explanation failed; showing deterministic evaluation.', geminiError);
+      }
       setTimingLogs(prev => [...prev, { label: LOADING_STEP_LABELS[3], ms: Math.round(performance.now() - t0) }]);
       setLoadingStep(4);
 
-      setCustomAnalysisResult(geminiResult);
+      setCustomAnalysisResult({ ...evaluation, customLogs });
       setAnalysisResultSource('fresh');
     } catch (err: any) {
       console.error(err);
