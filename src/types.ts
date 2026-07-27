@@ -1,13 +1,28 @@
-export type SkillNodeState = 'acquired' | 'recommended' | 'locked' | 'unlocked';
+export type SkillNodeStatus = 'locked' | 'unlocked' | 'new';
 
 export type SkillCategory = 'network' | 'infra' | 'backend' | 'frontend' | 'ai';
 
 export interface SkillNodeData {
+  [key: string]: unknown;
   label: string;
-  state: SkillNodeState;
+  status: SkillNodeStatus;
   category: SkillCategory;
+  layer: number;
   description: string;
   iconName: string;
+  recommended?: boolean;
+}
+
+export interface SkillTreeNode {
+  id: string;
+  label: string;
+  category: SkillCategory;
+  layer: number;
+  detectionNodeIds: string[];
+  relatedNodeIds: string[];
+  description: string;
+  iconName: string;
+  position: { x: number; y: number };
 }
 
 export interface RadarDataPoint {

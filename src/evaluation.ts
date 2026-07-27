@@ -1,4 +1,5 @@
 import type { ScanRecord } from './types';
+import { DETECTION_NODE_IDS, getRecommendedDetectionNodeIds } from './skillTree.ts';
 
 export interface DeterministicEvaluation {
   archetypeKey: 'frontend' | 'ai' | 'devops' | 'fullstack';
@@ -15,7 +16,8 @@ export interface ScoreBreakdown {
   contributions: { nodeId: string; points: number; acquired: boolean }[];
 }
 
-const NODE_IDS = ['git', 'html_css', 'javascript', 'typescript', 'react', 'nextjs', 'tailwind', 'nodejs', 'express', 'postgresql', 'docker', 'aws', 'github_actions', 'python', 'pytorch', 'openai', 'langchain'] as const;
+const LEGACY_NODE_IDS = ['git', 'html_css', 'javascript', 'typescript', 'react', 'nextjs', 'tailwind', 'nodejs', 'express', 'postgresql', 'docker', 'aws', 'github_actions', 'python', 'pytorch', 'openai', 'langchain'];
+const NODE_IDS = [...new Set([...LEGACY_NODE_IDS, ...DETECTION_NODE_IDS])];
 const SCORE_RULES = [
   { subject: 'ネットワーク', nodes: { git: 30, github_actions: 40, aws: 30 } },
   { subject: 'インフラ', nodes: { docker: 45, aws: 35, github_actions: 20 } },
@@ -23,7 +25,6 @@ const SCORE_RULES = [
   { subject: 'フロントエンド', nodes: { html_css: 15, javascript: 20, typescript: 15, react: 20, nextjs: 20, tailwind: 10 } },
   { subject: 'AI', nodes: { python: 20, pytorch: 35, openai: 25, langchain: 20 } },
 ] as const;
-const RECOMMENDATION_ORDER = ['javascript', 'typescript', 'react', 'nextjs', 'tailwind', 'nodejs', 'express', 'postgresql', 'docker', 'github_actions', 'aws', 'python', 'openai', 'pytorch', 'langchain', 'html_css', 'git'] as const;
 
 function scoreFor(nodes: Record<string, number>, acquired: Set<string>): number {
   return Math.min(100, Object.entries(nodes).reduce((total, [nodeId, points]) => total + (acquired.has(nodeId) ? points : 0), 0));
@@ -49,7 +50,7 @@ export function evaluateNodes(detectedNodeIds: readonly string[], previousScan: 
     archetypeKey: chooseArchetype(scoreValues),
     scores: SCORE_RULES.map((rule, index) => ({ subject: rule.subject, A: scoreValues[index], fullMark: 100 })),
     acquiredNodeIds,
-    recommendedNodeIds: RECOMMENDATION_ORDER.filter((id) => !acquired.has(id)).slice(0, 3),
+    recommendedNodeIds: getRecommendedDetectionNodeIds(acquiredNodeIds, 3),
     unlockedNodeIds: previousScan ? acquiredNodeIds.filter((id) => !previous.has(id)) : [],
   };
 }
