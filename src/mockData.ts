@@ -93,8 +93,8 @@ export const INITIAL_EDGES = [
 
 export const ARCHETYPES: Record<string, ArchetypeInfo> = {
   frontend: {
-    name: 'Frontend Artisan (フロントエンド・アルチザン)',
-    description: '細部までこだわり抜く画面の魔術師。完璧なUXとビジュアル表現を追求し、ユーザーの直感に響くプロダクトを創出する。',
+    name: 'Frontendを中心に広がる技術経験',
+    description: 'HTML/CSS、JavaScript、Reactなど、画面づくりに関わる技術が多く確認されています。',
     themeColor: 'text-pink-400 border-pink-500/30 bg-pink-950/20 shadow-pink-900/10',
     accentColor: '#ec4899',
     scores: [
@@ -113,8 +113,8 @@ export const ARCHETYPES: Record<string, ArchetypeInfo> = {
     recommendedNodeIds: ['nextjs', 'nodejs', 'openai']
   },
   ai: {
-    name: 'AI Agent Architect (AIエージェント・アーキテクト)',
-    description: '大規模言語モデルや機械学習を操り、次世代の知能化アプリケーションをデザインするデータとプロンプトの賢者。',
+    name: 'AI / Data領域に広がる技術経験',
+    description: 'Python、機械学習、AI APIなど、データとAIに関わる技術が多く確認されています。',
     themeColor: 'text-cyan-400 border-cyan-500/30 bg-cyan-950/20 shadow-cyan-900/10',
     accentColor: '#22d3ee',
     scores: [
@@ -133,8 +133,8 @@ export const ARCHETYPES: Record<string, ArchetypeInfo> = {
     recommendedNodeIds: ['langchain', 'docker', 'nodejs']
   },
   devops: {
-    name: 'Cloud Native Wizard (クラウドネイティブ・魔術師)',
-    description: 'インフラをコードで記述し、完璧なCI/CDパイプラインと可用性の高い可用環境を構築する、システムの守護神。',
+    name: 'Infrastructureを中心に広がる技術経験',
+    description: 'コンテナ、クラウド、CI/CDなど、開発環境と運用に関わる技術が多く確認されています。',
     themeColor: 'text-amber-400 border-amber-500/30 bg-amber-950/20 shadow-amber-900/10',
     accentColor: '#fbbf24',
     scores: [
@@ -153,8 +153,8 @@ export const ARCHETYPES: Record<string, ArchetypeInfo> = {
     recommendedNodeIds: ['aws', 'postgresql', 'typescript']
   },
   fullstack: {
-    name: 'Fullstack Generalist (フルスタック・ジェネラリスト)',
-    description: 'フロントからインフラ、DB設計まで、プロダクト開発のすべてを一人で形にできるマルチタレントなエンジニア。',
+    name: 'Frontend / Backendを中心に幅広く経験',
+    description: '画面、API、データベース、開発環境など、複数の領域にまたがる技術経験が確認されています。',
     themeColor: 'text-violet-400 border-violet-500/30 bg-violet-950/20 shadow-violet-900/10',
     accentColor: '#a78bfa',
     scores: [

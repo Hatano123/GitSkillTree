@@ -8,7 +8,8 @@ import {
   Background, 
   useNodesState, 
   useEdgesState, 
-  ConnectionLineType
+  ConnectionLineType,
+  MarkerType
 } from '@xyflow/react';
 import type { Node, Edge } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
@@ -19,7 +20,9 @@ import {
 } from 'lucide-react';
 
 import CustomNode from './CustomNode';
+import CircularEdge from './CircularEdge';
 import { ARCHETYPES, MOCK_REPOS } from './mockData';
+import { FIXED_TREE_FLOW_NODES, FIXED_TREE_FLOW_EDGES } from './skillTree';
 import { saveScan, getScanById, getLatestScanByUsername } from './firebase';
 import { fetchUserMetadata } from './github';
 import { detectAcquiredNodes } from './detectNodes';
@@ -27,8 +30,6 @@ import { generateExplanationWithGemini } from './gemini';
 import type { AnalysisResult } from './gemini';
 import { evaluateNodes, fallbackExplanation, getScoreBreakdown } from './evaluation';
 import type { ScanRecord } from './types';
-import type { SkillCategory } from './types';
-import { createCategoryFlow, getNextTreeNodes, LAYER_LABELS, SKILL_CATEGORIES } from './skillTree';
 
 const GithubIcon = () => (
   <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -39,6 +40,9 @@ const GithubIcon = () => (
 
 const nodeTypes = {
   custom: CustomNode,
+};
+const edgeTypes = {
+  circular: CircularEdge,
 };
 
 const SCAN_CACHE_DURATION_MS = 10 * 60 * 1000;
@@ -87,7 +91,6 @@ export default function App() {
   const [isShareCopied, setIsShareCopied] = useState(false);
   const [isDemoGrowthActive, setIsDemoGrowthActive] = useState(false);
   const [isScoreBreakdownOpen, setIsScoreBreakdownOpen] = useState(false);
-  const [activeCategory, setActiveCategory] = useState<SkillCategory>('frontend');
 
   // Flow State
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
@@ -394,17 +397,95 @@ export default function App() {
     return () => clearTimeout(transitionTimer);
   }, [screen, customAnalysisResult, githubUsername, avatarUrl, previousScan, isDemoGrowthActive, analysisResultSource]);
 
-  // Project shared detection IDs onto the selected fixed category tree.
+  // Sync React Flow nodes & edges
   useEffect(() => {
     if (screen !== 'result') return;
 
-    const acquiredIds = customAnalysisResult?.acquiredNodeIds
-      ?? (ARCHETYPES[archetypeKey] || ARCHETYPES.frontend).acquiredNodeIds;
-    const previousIds = previousScan?.acquiredNodeIds;
-    const flow = createCategoryFlow(activeCategory, acquiredIds, previousIds);
-    setNodes(flow.nodes);
-    setEdges(flow.edges);
-  }, [screen, archetypeKey, activeCategory, customAnalysisResult, previousScan, setNodes, setEdges]);
+    let acquiredIds: string[] = [];
+    let recommendedIds: string[] = [];
+    let unlockedIds: string[] = [];
+
+    if (customAnalysisResult) {
+      acquiredIds = customAnalysisResult.acquiredNodeIds;
+      recommendedIds = customAnalysisResult.recommendedNodeIds;
+      unlockedIds = customAnalysisResult.unlockedNodeIds || [];
+    } else {
+      const currentArchetype = ARCHETYPES[archetypeKey] || ARCHETYPES.frontend;
+      acquiredIds = currentArchetype.acquiredNodeIds;
+      recommendedIds = currentArchetype.recommendedNodeIds;
+    }
+
+    const skillNodes = FIXED_TREE_FLOW_NODES.map((node) => {
+      let state: 'acquired' | 'recommended' | 'locked' | 'unlocked' = 'locked';
+
+      const detectionNodeIds = node.data.detectionNodeIds ?? [node.id];
+      if (detectionNodeIds.some((id) => unlockedIds.includes(id))) {
+        state = 'unlocked';
+      } else if (detectionNodeIds.some((id) => acquiredIds.includes(id))) {
+        state = 'acquired';
+      } else if (detectionNodeIds.some((id) => recommendedIds.includes(id))) {
+        state = 'recommended';
+      }
+
+      return {
+        id: node.id,
+        type: 'custom',
+        zIndex: 10,
+        position: node.position,
+        data: {
+          ...node.data,
+          state,
+        },
+      };
+    });
+
+    const flowNodes: Node[] = skillNodes;
+    const nodeState = new Map(skillNodes.map((node) => [node.id, node.data.state]));
+    const categoryEdgeColors = {
+      frontend: '#9d174d',
+      backend: '#6d28d9',
+      infra: '#b45309',
+      ai: '#0e7490',
+      network: '#047857',
+    };
+    const flowEdges = FIXED_TREE_FLOW_EDGES.map((edge) => {
+      const isSourceAcquired = nodeState.get(edge.source) === 'acquired' || nodeState.get(edge.source) === 'unlocked';
+      const isTargetRecommended = nodeState.get(edge.target) === 'recommended';
+
+      let strokeColor = edge.groupEdge ? categoryEdgeColors[edge.category] : '#475569';
+      let animated = false;
+      let strokeDasharray: string | undefined;
+
+      if (nodeState.get(edge.target) === 'unlocked') {
+        strokeColor = '#10b981';
+        animated = true;
+        strokeDasharray = '6 7';
+      } else if (isSourceAcquired && isTargetRecommended) {
+        strokeColor = '#fbbf24';
+        animated = true;
+        strokeDasharray = '4 7';
+      }
+
+      return {
+        ...edge,
+        animated,
+        zIndex: -10,
+        style: {
+          stroke: strokeColor,
+          strokeWidth: edge.groupEdge ? 1.25 : 2,
+          strokeDasharray,
+          opacity: edge.groupEdge ? 0.55 : 0.8,
+        },
+        markerEnd: edge.groupEdge ? undefined : {
+          type: MarkerType.ArrowClosed,
+          color: strokeColor,
+        },
+      };
+    });
+
+    setNodes(flowNodes);
+    setEdges(flowEdges);
+  }, [screen, archetypeKey, customAnalysisResult, setNodes, setEdges]);
 
   // Current archetype details
   const archetype = useMemo(() => {
@@ -441,16 +522,6 @@ export default function App() {
       ?? (ARCHETYPES[archetypeKey] || ARCHETYPES.frontend).acquiredNodeIds;
     return getScoreBreakdown(acquiredNodeIds);
   }, [archetypeKey, customAnalysisResult]);
-
-  const activeDetectedNodeIds = useMemo(
-    () => customAnalysisResult?.acquiredNodeIds
-      ?? (ARCHETYPES[archetypeKey] || ARCHETYPES.frontend).acquiredNodeIds,
-    [archetypeKey, customAnalysisResult],
-  );
-  const nextTreeNodes = useMemo(
-    () => getNextTreeNodes(activeDetectedNodeIds, activeCategory, 3),
-    [activeCategory, activeDetectedNodeIds],
-  );
 
   const handleCopyLink = () => {
     const idToShare = savedScanId;
@@ -528,7 +599,7 @@ export default function App() {
             </h2>
             <p className="text-slate-400 text-sm md:text-base leading-relaxed">
               初回スキャンで「ベースライン」を作成。開発した後に再スキャンすると、<br />
-              <strong>前回から伸びた適性スコアの差分</strong>と<strong>新しく解放された技術（アンロック演出）</strong>を実感できます。
+              <strong>前回から広がった技術経験の差分</strong>と<strong>新しく解放された技術（アンロック演出）</strong>を実感できます。
             </p>
           </div>
 
@@ -702,20 +773,12 @@ export default function App() {
 
       {/* Screen 3: Result Screen */}
       {screen === 'result' && (
-        <main className="relative z-10 flex min-h-[calc(100vh-73px)] flex-1 flex-col">
+        <main className="flex-1 flex flex-col lg:flex-row relative z-10 min-h-[calc(100vh-73px)]">
           
-          {/* 1. 今回の成長 */}
-          <section className="w-full border-b border-slate-900 bg-slate-950/40 p-6 backdrop-blur-xl">
-            <div className="mx-auto max-w-7xl">
-              <div className="mb-5 flex items-center gap-2">
-                <TrendingUp className="h-5 w-5 text-cyan-400" />
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-500">Growth update</p>
-                  <h2 className="text-lg font-black text-white">今回の成長</h2>
-                </div>
-              </div>
+          {/* Left panel: Aptitude Radar Chart */}
+          <section className="w-full lg:w-96 border-r border-slate-900 bg-slate-950/40 backdrop-blur-xl p-6 flex flex-col justify-between shrink-0 overflow-y-auto max-h-[calc(100vh-73px)]">
             
-            <div className="grid gap-6 lg:grid-cols-4">
+            <div className="space-y-6">
               
               {/* Back & User profile header */}
               <div>
@@ -776,7 +839,7 @@ export default function App() {
               <div className={`p-4 rounded-xl border transition-all duration-300 ${archetype.themeColor}`}>
                 <div className="flex items-center gap-2 mb-2">
                   <Award className="w-5 h-5 shrink-0" />
-                  <h3 className="font-bold text-sm tracking-wide text-white">エンジニア適性タイプ</h3>
+                  <h3 className="font-bold text-sm tracking-wide text-white">技術経験プロファイル</h3>
                 </div>
                 <h4 className="text-base font-extrabold mb-2 text-white">
                   {archetype.name}
@@ -790,7 +853,7 @@ export default function App() {
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">
-                    {previousScan ? '成長の軌跡 (比較)' : '適性グラフ'}
+                    {previousScan ? '技術経験の変化 (比較)' : '技術経験の分布'}
                   </h3>
                   <div className="text-[10px] font-mono flex items-center gap-2">
                     {previousScan && (
@@ -810,7 +873,7 @@ export default function App() {
                       className="ml-1 inline-flex items-center gap-1 rounded border border-cyan-500/30 bg-cyan-500/10 px-2 py-1 text-cyan-300 hover:bg-cyan-500/20 transition-colors"
                     >
                       <Info className="w-3 h-3" />
-                      評価の根拠
+                      検出の根拠
                     </button>
                   </div>
                 </div>
@@ -877,117 +940,89 @@ export default function App() {
                 )}
               </div>
 
-              <div className="rounded-xl border border-slate-900 bg-slate-950/60 p-4">
-                <h3 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400">
-                  <Sparkles className="h-4 w-4 text-amber-300" />
-                  検出差分
+              {/* AI Findings or Next Stack Recommendations */}
+              <div className="space-y-2">
+                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1">
+                  <Compass className="w-3.5 h-3.5 text-amber-400" />
+                  {customAnalysisResult ? (previousScan ? '📈 成長フィードバック' : '📊 スキャン解析所見') : '次のおすすめ技術スタック'}
                 </h3>
-                {customAnalysisResult?.unlockedNodeIds.length ? (
-                  <div className="flex flex-wrap gap-2">
-                    {customAnalysisResult.unlockedNodeIds.map((id) => (
-                      <span key={id} className="rounded-full border border-amber-400/30 bg-amber-400/10 px-2.5 py-1 text-[10px] font-bold text-amber-200">
-                        NEW {id}
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs leading-relaxed text-slate-500">
-                    前回比較がないため、現在検出できた技術を通常の開放状態で表示します。
-                  </p>
-                )}
-                {customAnalysisResult?.customLogs?.[0] && (
-                  <p className="mt-3 text-xs leading-relaxed text-slate-300">{customAnalysisResult.customLogs[0]}</p>
-                )}
-              </div>
-
-            </div>
-            </div>
-          </section>
-
-          {/* 2. 固定スキルツリー */}
-          <section className="bg-[#0b0f19] px-4 py-6 sm:px-6">
-            <div className="mx-auto max-w-7xl">
-              <div className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-500">Fixed map</p>
-                  <h2 className="text-lg font-black text-white">固定スキルツリー</h2>
-                  <p className="mt-1 text-xs text-slate-500">Layerは表示上の区分です。前提ノードに関係なく、検出した技術は単独で開放されます。</p>
-                </div>
-                <div className="flex max-w-full gap-2 overflow-x-auto pb-1">
-                  {SKILL_CATEGORIES.map((category) => (
-                    <button
-                      key={category.id}
-                      type="button"
-                      onClick={() => setActiveCategory(category.id)}
-                      className={`shrink-0 rounded-lg border px-3 py-2 text-[10px] font-black uppercase tracking-wider transition-colors ${
-                        activeCategory === category.id
-                          ? 'border-cyan-400/60 bg-cyan-400/10 text-cyan-200'
-                          : 'border-slate-800 bg-slate-950 text-slate-500 hover:text-slate-300'
-                      }`}
+                <ul className="space-y-2">
+                  {archetype.nextSteps.map((step, idx) => (
+                    <li 
+                      key={idx}
+                      className="text-xs bg-slate-900/40 hover:bg-slate-900 border border-slate-900/60 hover:border-slate-800 p-2.5 rounded-xl flex items-start gap-2.5 text-slate-300 transition-colors"
                     >
-                      <span className="sm:hidden">{category.shortLabel}</span>
-                      <span className="hidden sm:inline">{category.label}</span>
-                    </button>
+                      <span className="w-4 h-4 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 font-mono text-[9px] flex items-center justify-center shrink-0 mt-0.5">
+                        {idx + 1}
+                      </span>
+                      <span>{step}</span>
+                    </li>
                   ))}
+                </ul>
+              </div>
+
+            </div>
+
+          </section>
+
+          {/* Right panel: React Flow Canvas */}
+          <section className="flex-1 min-h-[400px] lg:min-h-0 relative bg-[#0b0f19]">
+            <ReactFlow
+              nodes={nodes}
+              edges={edges}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              nodeTypes={nodeTypes}
+              edgeTypes={edgeTypes}
+              nodesDraggable={false}
+              connectionLineType={ConnectionLineType.SmoothStep}
+              fitView
+              fitViewOptions={{ padding: 0.15 }}
+              minZoom={0.2}
+              maxZoom={2}
+            >
+              <Background color="#1e293b" gap={20} size={1} />
+              <Controls position="top-right" className="!bg-slate-950 !border-slate-800 !text-slate-300 shadow-2xl [&_button]:!bg-slate-900 [&_button]:!border-slate-800 [&_button]:!text-slate-300 [&_button:hover]:!bg-slate-800" />
+            </ReactFlow>
+
+            {/* Tree Map Legend */}
+            <div className="absolute bottom-4 left-4 right-4 lg:right-auto bg-slate-950/90 border border-slate-900 backdrop-blur-md p-3.5 rounded-xl shadow-2xl text-xs space-y-3 z-30 max-w-xl">
+              <h4 className="font-bold text-white text-[11px] tracking-wide uppercase">スキルマップの凡例</h4>
+              <div className="flex flex-wrap items-center gap-4 text-slate-400">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+                  <span>取得済み</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded bg-amber-400 animate-unlock-sparkle" />
+                  <span>✨ 今回新しく解放 (点滅)</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded bg-amber-400 animate-pulse" />
+                  <span>おすすめ (次の一手)</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded bg-slate-700" />
+                  <span>未開放 (ロック中)</span>
                 </div>
               </div>
-
-              <div className="mb-2 hidden grid-cols-4 gap-[98px] px-10 text-[10px] font-bold uppercase tracking-widest text-slate-600 md:grid">
-                {LAYER_LABELS.map((label, index) => <span key={label}>Layer {index + 1} · {label}</span>)}
-              </div>
-
-              <div className="h-[540px] min-w-0 overflow-hidden rounded-2xl border border-slate-900 bg-slate-950/40">
-                <ReactFlow
-                  nodes={nodes}
-                  edges={edges}
-                  onNodesChange={onNodesChange}
-                  onEdgesChange={onEdgesChange}
-                  nodeTypes={nodeTypes}
-                  connectionLineType={ConnectionLineType.SmoothStep}
-                  fitView
-                  fitViewOptions={{ padding: 0.08 }}
-                  minZoom={0.45}
-                  maxZoom={1.5}
-                  nodesConnectable={false}
-                >
-                  <Background color="#1e293b" gap={20} size={1} />
-                  <Controls position="top-right" className="!border-slate-800 !bg-slate-950 !text-slate-300 shadow-2xl [&_button]:!border-slate-800 [&_button]:!bg-slate-900 [&_button]:!text-slate-300 [&_button:hover]:!bg-slate-800" />
-                </ReactFlow>
-              </div>
-
-              <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-[10px] text-slate-500">
-                <span className="flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded bg-emerald-500" />unlocked：検出済み</span>
-                <span className="flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded bg-amber-300 animate-pulse" />new：今回新規</span>
-                <span className="flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded bg-slate-700" />locked：未検出</span>
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-slate-800/80 pt-2.5 text-[10px] text-slate-400">
+                <div className="flex items-center gap-2">
+                  <span className="block h-px w-8 bg-slate-500" />
+                  <span>実線：技術の関連</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="block w-8 border-t-2 border-dashed border-emerald-400" />
+                  <span>緑の点線：今回伸びた枝</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="block w-8 border-t-2 border-dashed border-amber-400" />
+                  <span>黄色の点線：次の一手</span>
+                </div>
               </div>
             </div>
           </section>
 
-          {/* 3. 次の一手 */}
-          <section className="border-t border-slate-900 bg-slate-950/50 px-4 py-7 sm:px-6">
-            <div className="mx-auto max-w-7xl">
-              <h2 className="flex items-center gap-2 text-lg font-black text-white">
-                <Compass className="h-5 w-5 text-amber-300" />
-                次の一手
-              </h2>
-              <p className="mt-1 text-xs text-slate-500">現在開放されているノードに隣接する、未検出の技術を最大3件表示します。</p>
-              <div className="mt-4 grid gap-3 md:grid-cols-3">
-                {nextTreeNodes.map((item, index) => (
-                  <div key={item.id} className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-4">
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono text-[10px] text-amber-400">NEXT {index + 1}</span>
-                      <span className="text-[9px] uppercase tracking-wider text-slate-600">Layer {item.layer}</span>
-                    </div>
-                    <h3 className="mt-2 text-sm font-black text-slate-100">{item.label}</h3>
-                    <p className="mt-1 text-xs leading-relaxed text-slate-400">{item.description}</p>
-                  </div>
-                ))}
-                {nextTreeNodes.length === 0 && (
-                  <p className="text-xs text-slate-500">このカテゴリには現在表示できる隣接候補がありません。</p>
-                )}
-              </div>
-            </div>
-          </section>
         </main>
       )}
     </div>

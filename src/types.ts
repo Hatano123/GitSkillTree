@@ -1,3 +1,4 @@
+export type SkillNodeState = 'acquired' | 'recommended' | 'locked' | 'unlocked';
 export type SkillNodeStatus = 'locked' | 'unlocked' | 'new';
 
 export type SkillCategory = 'network' | 'infra' | 'backend' | 'frontend' | 'ai';
@@ -5,12 +6,18 @@ export type SkillCategory = 'network' | 'infra' | 'backend' | 'frontend' | 'ai';
 export interface SkillNodeData {
   [key: string]: unknown;
   label: string;
-  status: SkillNodeStatus;
+  state: SkillNodeState;
   category: SkillCategory;
-  layer: number;
   description: string;
   iconName: string;
+  // Fixed-tree definitions remain available as data, but are not rendered by the main UI.
+  status?: SkillNodeStatus;
+  layer?: number;
   recommended?: boolean;
+  kind?: 'skill' | 'category' | 'hub';
+  detectedCount?: number;
+  onClick?: () => void;
+  detectionNodeIds?: string[];
 }
 
 export interface SkillTreeNode {

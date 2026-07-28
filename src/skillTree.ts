@@ -151,6 +151,7 @@ export function createCategoryFlow(
     draggable: false,
     data: {
       label: item.label,
+      state: getNodeStatus(item, detected, previous) === 'locked' ? 'locked' : 'unlocked',
       status: getNodeStatus(item, detected, previous),
       category: item.category,
       layer: item.layer,
@@ -182,3 +183,181 @@ export function createCategoryFlow(
 
   return { nodes, edges, nextNodes };
 }
+
+/** Compact constellation shown before a category is expanded. */
+export function createCategoryOverviewFlow(
+  detectedNodeIds: readonly string[],
+  onSelect: (category: SkillCategory) => void,
+): { nodes: Node<SkillNodeData>[]; edges: Edge[] } {
+  const detected = new Set(detectedNodeIds);
+  const positions: Record<SkillCategory, { x: number; y: number }> = {
+    frontend: { x: 760, y: 105 },
+    backend: { x: 820, y: 400 },
+    infra: { x: 500, y: 590 },
+    ai: { x: 150, y: 400 },
+    network: { x: 210, y: 105 },
+  };
+  const hub: Node<SkillNodeData> = {
+    id: 'skill-map', type: 'custom', position: { x: 490, y: 285 }, draggable: false,
+    data: { label: 'Skill Map', state: 'unlocked', status: 'unlocked', category: 'frontend', layer: 0, description: 'カテゴリをクリックして枝を展開します。', iconName: 'GitBranch', kind: 'hub' },
+  };
+  const categoryNodes: Node<SkillNodeData>[] = SKILL_CATEGORIES.map((category) => {
+    const skills = SKILL_TREE_NODES.filter((item) => item.category === category.id);
+    const detectedCount = skills.filter((item) => isTreeNodeDetected(item, detected)).length;
+    return {
+      id: `category-${category.id}`,
+      type: 'custom',
+      position: positions[category.id],
+      draggable: false,
+      data: {
+        label: category.label,
+        state: detectedCount > 0 ? 'unlocked' : 'locked',
+        status: detectedCount > 0 ? 'unlocked' : 'locked',
+        category: category.id,
+        layer: 0,
+        description: `${detectedCount} / ${skills.length} 技術を検出`,
+        iconName: category.id === 'ai' ? 'Sparkles' : category.id === 'infra' ? 'Cloud' : category.id === 'network' ? 'Link' : category.id === 'backend' ? 'Server' : 'Atom',
+        kind: 'category',
+        detectedCount,
+        onClick: () => onSelect(category.id),
+      },
+    };
+  });
+  const edges: Edge[] = categoryNodes.map((item) => ({
+    id: `skill-map-${item.id}`,
+    source: 'skill-map', target: item.id, type: 'smoothstep',
+    animated: item.data.status === 'unlocked',
+    style: { stroke: item.data.status === 'unlocked' ? '#14b8a6' : '#334155', strokeWidth: 1.5, strokeDasharray: '5 5' },
+  }));
+  return { nodes: [hub, ...categoryNodes], edges };
+}
+
+const MAIN_FLOW_CENTER = { x: 1050, y: 850 };
+const CATEGORY_ANGLES: Record<SkillCategory, number> = {
+  frontend: -72,
+  backend: 0,
+  infra: 72,
+  ai: 144,
+  network: 216,
+};
+
+function polarPosition(angle: number, radius: number, offset = 0) {
+  const radians = (angle * Math.PI) / 180;
+  const perpendicular = radians + Math.PI / 2;
+  return {
+    x: MAIN_FLOW_CENTER.x + Math.cos(radians) * radius + Math.cos(perpendicular) * offset,
+    y: MAIN_FLOW_CENTER.y + Math.sin(radians) * radius + Math.sin(perpendicular) * offset,
+  };
+}
+
+/**
+ * The complete fixed tree projected into the original main-branch React Flow UI.
+ * This changes only the data supplied to the canvas; CustomNode and the page UI
+ * remain identical to main.
+ */
+export const FIXED_TREE_FLOW_NODES = [
+  {
+    id: 'git',
+    position: MAIN_FLOW_CENTER,
+    data: {
+      label: 'Git', category: 'infra' as const, description: 'すべての技術ブランチの起点。',
+      iconName: 'GitBranch', detectionNodeIds: ['git'], kind: 'hub' as const,
+    },
+  },
+  ...SKILL_CATEGORIES.flatMap((category) => {
+    const angle = CATEGORY_ANGLES[category.id];
+    const categorySkills = SKILL_TREE_NODES.filter((item) => item.category === category.id);
+    const categoryNode = {
+      id: `category-${category.id}`,
+      position: polarPosition(angle, 180),
+      data: {
+        label: category.label,
+        category: category.id,
+        description: `${category.label} の固定スキルブランチ。`,
+        iconName: category.id === 'frontend' ? 'Atom' : category.id === 'backend' ? 'Server' : category.id === 'infra' ? 'Cloud' : category.id === 'ai' ? 'Sparkles' : 'Link',
+        detectionNodeIds: [...new Set(categorySkills.flatMap((item) => item.detectionNodeIds))],
+        kind: 'category' as const,
+      },
+    };
+    const skillNodes = categorySkills.map((item) => {
+      const sameLayer = categorySkills.filter((candidate) => candidate.layer === item.layer);
+      const index = sameLayer.findIndex((candidate) => candidate.id === item.id);
+      const sectorArc = 52;
+      const angleOffset = sameLayer.length === 1
+        ? 0
+        : -sectorArc / 2 + index * (sectorArc / (sameLayer.length - 1));
+      return {
+        id: item.id,
+        position: polarPosition(angle + angleOffset, 330 + (item.layer - 1) * 155),
+        data: {
+          label: item.label,
+          category: item.category,
+          description: item.description,
+          iconName: item.iconName,
+          detectionNodeIds: item.detectionNodeIds,
+          kind: 'skill' as const,
+          layer: item.layer,
+        },
+      };
+    });
+    return [categoryNode, ...skillNodes];
+  }),
+];
+
+const NODE_HALF_SIZE = 36;
+const FLOW_VISUAL_CENTER = {
+  x: MAIN_FLOW_CENTER.x + NODE_HALF_SIZE,
+  y: MAIN_FLOW_CENTER.y + NODE_HALF_SIZE,
+};
+const FLOW_NODE_CENTERS = new Map(
+  FIXED_TREE_FLOW_NODES.map((node) => [
+    node.id,
+    {
+      x: node.position.x + NODE_HALF_SIZE,
+      y: node.position.y + NODE_HALF_SIZE,
+    },
+  ]),
+);
+
+export const FIXED_TREE_FLOW_EDGES = [
+  ...SKILL_CATEGORIES.map((category) => ({
+    id: `git-category-${category.id}`,
+    source: 'git',
+    target: `category-${category.id}`,
+    groupEdge: false,
+    category: category.id,
+  })),
+  ...SKILL_CATEGORIES.flatMap((category) => {
+    const categorySkills = SKILL_TREE_NODES.filter((item) => item.category === category.id);
+    const layerAnchors = [1, 2, 3, 4].map((layer) => {
+      const layerNodes = categorySkills.filter((item) => item.layer === layer);
+      return layerNodes[Math.floor(layerNodes.length / 2)];
+    });
+    const backboneEdges = layerAnchors.map((anchor, index) => ({
+      id: index === 0
+        ? `category-${category.id}-layer-1`
+        : `${category.id}-layer-${index}-layer-${index + 1}`,
+      source: index === 0 ? `category-${category.id}` : layerAnchors[index - 1].id,
+      target: anchor.id,
+      groupEdge: false,
+      category: category.id,
+    }));
+    const circularGroupEdges = [1, 2, 3, 4].flatMap((layer) => {
+      const layerNodes = categorySkills.filter((item) => item.layer === layer);
+      return layerNodes.slice(0, -1).map((item, index) => ({
+        id: `circle-${category.id}-layer-${layer}-${index}`,
+        source: item.id,
+        target: layerNodes[index + 1].id,
+        type: 'circular',
+        groupEdge: true,
+        category: category.id,
+        data: {
+          center: FLOW_VISUAL_CENTER,
+          sourcePoint: FLOW_NODE_CENTERS.get(item.id)!,
+          targetPoint: FLOW_NODE_CENTERS.get(layerNodes[index + 1].id)!,
+        },
+      }));
+    });
+    return [...backboneEdges, ...circularGroupEdges];
+  }),
+];

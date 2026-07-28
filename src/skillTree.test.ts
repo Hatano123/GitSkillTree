@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createCategoryFlow, getNextTreeNodes, SKILL_CATEGORIES, SKILL_TREE_NODES } from './skillTree.ts';
+import {
+  createCategoryFlow,
+  getNextTreeNodes,
+  SKILL_CATEGORIES,
+  SKILL_TREE_NODES,
+} from './skillTree.ts';
 
 test('fixed tree contains five branched categories with 10 to 12 nodes', () => {
   assert.equal(SKILL_CATEGORIES.length, 5);
