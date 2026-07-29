@@ -21,6 +21,7 @@ import {
 
 import CustomNode from './CustomNode';
 import CircularEdge from './CircularEdge';
+import SkillNodeDetailPanel from './SkillNodeDetailPanel';
 import { ARCHETYPES, MOCK_REPOS } from './mockData';
 import { FIXED_TREE_FLOW_NODES, FIXED_TREE_FLOW_EDGES } from './skillTree';
 import { saveScan, getScanById, getLatestScanByUsername } from './firebase';
@@ -29,7 +30,7 @@ import { detectAcquiredNodes } from './detectNodes';
 import { generateExplanationWithGemini } from './gemini';
 import type { AnalysisResult } from './gemini';
 import { evaluateNodes, fallbackExplanation, getScoreBreakdown } from './evaluation';
-import type { ScanRecord } from './types';
+import type { ScanRecord, SkillNodeData } from './types';
 
 const GithubIcon = () => (
   <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -91,10 +92,19 @@ export default function App() {
   const [isShareCopied, setIsShareCopied] = useState(false);
   const [isDemoGrowthActive, setIsDemoGrowthActive] = useState(false);
   const [isScoreBreakdownOpen, setIsScoreBreakdownOpen] = useState(false);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
   // Flow State
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  const selectedNode = useMemo(
+    () => nodes.find((node) => node.id === selectedNodeId) ?? null,
+    [nodes, selectedNodeId],
+  );
+
+  useEffect(() => {
+    if (screen !== 'result') setSelectedNodeId(null);
+  }, [screen]);
 
   // 1. URL ID Param check on mount
   useEffect(() => {
@@ -975,6 +985,7 @@ export default function App() {
               nodeTypes={nodeTypes}
               edgeTypes={edgeTypes}
               nodesDraggable={false}
+              onNodeClick={(_, node) => setSelectedNodeId(node.id)}
               connectionLineType={ConnectionLineType.SmoothStep}
               fitView
               fitViewOptions={{ padding: 0.15 }}
@@ -984,6 +995,14 @@ export default function App() {
               <Background color="#1e293b" gap={20} size={1} />
               <Controls position="top-right" className="!bg-slate-950 !border-slate-800 !text-slate-300 shadow-2xl [&_button]:!bg-slate-900 [&_button]:!border-slate-800 [&_button]:!text-slate-300 [&_button:hover]:!bg-slate-800" />
             </ReactFlow>
+
+            {selectedNode && (
+              <SkillNodeDetailPanel
+                nodeId={selectedNode.id}
+                nodeData={selectedNode.data as unknown as SkillNodeData}
+                onClose={() => setSelectedNodeId(null)}
+              />
+            )}
 
             {/* Tree Map Legend */}
             <div className="absolute bottom-4 left-4 right-4 lg:right-auto bg-slate-950/90 border border-slate-900 backdrop-blur-md p-3.5 rounded-xl shadow-2xl text-xs space-y-3 z-30 max-w-xl">
