@@ -5,11 +5,54 @@ import {
   GitBranch, FileCode, Code, ShieldAlert, Atom, Layers, Palette, 
   Terminal, Server, Database, Box, Cloud, Workflow, Binary, Cpu, Sparkles, Link 
 } from 'lucide-react';
+import {
+  SiCss, SiDjango, SiDocker, SiExpress, SiFastapi, SiGit, SiGithubactions,
+  SiGooglecloud, SiHtml5, SiHuggingface, SiJavascript, SiLangchain, SiLinux,
+  SiNextdotjs, SiNginx, SiNodedotjs, SiNumpy, SiOpencv, SiOpenjdk, SiPandas,
+  SiPostgresql, SiPython, SiPytorch, SiReact, SiScikitlearn, SiTailwindcss,
+  SiTensorflow, SiTerraform, SiTypescript, SiVite, SiVuedotjs,
+} from 'react-icons/si';
 import type { SkillNodeData } from './types';
 
 const ICON_MAP: Record<string, React.ComponentType<any>> = {
   GitBranch, FileCode, Code, ShieldAlert, Atom, Layers, Palette, 
   Terminal, Server, Database, Box, Cloud, Workflow, Binary, Cpu, Sparkles, Link
+};
+
+// Use official brand marks where a technology has one; conceptual nodes keep Lucide icons.
+const BRAND_ICON_MAP: Record<string, React.ComponentType<any>> = {
+  Git: SiGit,
+  HTML: SiHtml5,
+  CSS: SiCss,
+  JavaScript: SiJavascript,
+  TypeScript: SiTypescript,
+  React: SiReact,
+  Vue: SiVuedotjs,
+  Vite: SiVite,
+  'Next.js': SiNextdotjs,
+  'UI Library': SiTailwindcss,
+  Python: SiPython,
+  'Node.js': SiNodedotjs,
+  Java: SiOpenjdk,
+  FastAPI: SiFastapi,
+  Express: SiExpress,
+  Django: SiDjango,
+  Linux: SiLinux,
+  Docker: SiDocker,
+  'Docker Compose': SiDocker,
+  Nginx: SiNginx,
+  'GitHub Actions': SiGithubactions,
+  GCP: SiGooglecloud,
+  Terraform: SiTerraform,
+  NumPy: SiNumpy,
+  Pandas: SiPandas,
+  'scikit-learn': SiScikitlearn,
+  OpenCV: SiOpencv,
+  PyTorch: SiPytorch,
+  TensorFlow: SiTensorflow,
+  'Hugging Face': SiHuggingface,
+  LangChain: SiLangchain,
+  PostgreSQL: SiPostgresql,
 };
 
 const UNLOCK_TIPS: Record<string, string> = {
@@ -34,7 +77,8 @@ const UNLOCK_TIPS: Record<string, string> = {
 
 const CustomNode: React.FC<NodeProps> = ({ id, data }) => {
   const nodeData = data as unknown as SkillNodeData;
-  const Icon = ICON_MAP[nodeData.iconName] || Code;
+  const Icon = BRAND_ICON_MAP[nodeData.label] || ICON_MAP[nodeData.iconName] || Code;
+  const isCategoryNode = nodeData.kind === 'category';
 
   // Genre/Category Specific Colors
   const categoryColors = {
@@ -42,33 +86,43 @@ const CustomNode: React.FC<NodeProps> = ({ id, data }) => {
       text: 'text-pink-400',
       bg: 'bg-pink-500/10',
       border: 'border-pink-500/30 hover:border-pink-400/60',
-      shadow: 'shadow-pink-500/10'
+      shadow: 'shadow-pink-500/10',
+      glow: 'shadow-[0_0_18px_rgba(236,72,153,0.55)]',
+      dot: 'bg-pink-400 ring-2 ring-pink-950'
     },
     backend: {
       text: 'text-violet-400',
       bg: 'bg-violet-500/10',
       border: 'border-violet-500/30 hover:border-violet-400/60',
-      shadow: 'shadow-violet-500/10'
+      shadow: 'shadow-violet-500/10',
+      glow: 'shadow-[0_0_18px_rgba(139,92,246,0.55)]',
+      dot: 'bg-violet-400 ring-2 ring-violet-950'
     },
     infra: {
       text: 'text-amber-400',
       bg: 'bg-amber-500/10',
       border: 'border-amber-500/30 hover:border-amber-400/60',
-      shadow: 'shadow-amber-500/10'
+      shadow: 'shadow-amber-500/10',
+      glow: 'shadow-[0_0_18px_rgba(245,158,11,0.55)]',
+      dot: 'bg-amber-400 ring-2 ring-amber-950'
     },
     network: {
       text: 'text-emerald-400',
       bg: 'bg-emerald-500/10',
       border: 'border-emerald-500/30 hover:border-emerald-400/60',
-      shadow: 'shadow-emerald-500/10'
+      shadow: 'shadow-emerald-500/10',
+      glow: 'shadow-[0_0_18px_rgba(16,185,129,0.55)]',
+      dot: 'bg-emerald-400 ring-2 ring-emerald-950'
     },
     ai: {
       text: 'text-cyan-400',
       bg: 'bg-cyan-500/10',
       border: 'border-cyan-500/30 hover:border-cyan-400/60',
-      shadow: 'shadow-cyan-500/10'
+      shadow: 'shadow-cyan-500/10',
+      glow: 'shadow-[0_0_18px_rgba(6,182,212,0.55)]',
+      dot: 'bg-cyan-400 ring-2 ring-cyan-950'
     }
-  }[nodeData.category] || { text: 'text-slate-400', bg: 'bg-slate-500/10', border: 'border-slate-500/30', shadow: 'shadow-slate-500/10' };
+  }[nodeData.category] || { text: 'text-slate-400', bg: 'bg-slate-500/10', border: 'border-slate-500/30', shadow: 'shadow-slate-500/10', glow: 'shadow-[0_0_18px_rgba(148,163,184,0.45)]', dot: 'bg-slate-400 ring-2 ring-slate-950' };
 
   // Status Styling
   let nodeStyle = '';
@@ -76,7 +130,7 @@ const CustomNode: React.FC<NodeProps> = ({ id, data }) => {
 
   if (nodeData.state === 'acquired') {
     // Acquired: Bright colored glowing border and filled glassmorphism
-    nodeStyle = `border-2 bg-slate-900/90 shadow-[0_0_20px_rgba(16,185,129,0.25)] border-emerald-500`;
+    nodeStyle = `border-2 bg-slate-900/90 ${categoryColors.border} ${categoryColors.glow}`;
     dotColor = 'bg-emerald-400 ring-2 ring-emerald-950';
   } else if (nodeData.state === 'unlocked') {
     // Unlocked: Gold/green intense sparkle animation
@@ -87,9 +141,9 @@ const CustomNode: React.FC<NodeProps> = ({ id, data }) => {
     nodeStyle = `border-2 bg-slate-900/90 border-amber-400 animate-pulse-glow`;
     dotColor = 'bg-amber-400 ring-2 ring-amber-950';
   } else {
-    // Locked: Gray, high transparency, grayscale icon
-    nodeStyle = `border-2 bg-slate-950/40 border-slate-800 opacity-40 grayscale`;
-    dotColor = 'bg-slate-700';
+    // Locked: Preserve the category color while keeping the label fully legible.
+    nodeStyle = `border-2 ${categoryColors.bg} ${categoryColors.border} opacity-30`;
+    dotColor = 'bg-slate-700 ring-2 ring-slate-950';
   }
 
   return (
@@ -98,7 +152,7 @@ const CustomNode: React.FC<NodeProps> = ({ id, data }) => {
       <Handle type="target" position={Position.Top} className="!w-1.5 !h-1.5 !bg-slate-700 !border-slate-950" />
       
       {/* Circle Circle Node */}
-      <div className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-300 relative shadow-lg ${categoryColors.shadow} ${categoryColors.border} ${nodeStyle}`}>
+      <div className={`${isCategoryNode ? 'w-[72px] h-[72px]' : 'w-14 h-14'} rounded-full flex items-center justify-center transition-all duration-300 relative shadow-lg ${categoryColors.shadow} ${categoryColors.border} ${nodeStyle}`}>
         <div className={`${categoryColors.text} transition-transform duration-300 group-hover:scale-110`}>
           <Icon className="w-6 h-6" />
         </div>
@@ -116,7 +170,7 @@ const CustomNode: React.FC<NodeProps> = ({ id, data }) => {
 
       {/* Label tag under the circle */}
       <div className="mt-2 text-center">
-        <span className="text-[10px] font-black text-slate-200 tracking-wider whitespace-nowrap bg-slate-950/90 px-2 py-0.5 rounded border border-slate-900/80 shadow-md">
+        <span className="text-[10px] font-black text-white tracking-wider whitespace-nowrap bg-slate-950/90 px-2 py-0.5 rounded border border-slate-900/80 shadow-md">
           {nodeData.label}
         </span>
       </div>

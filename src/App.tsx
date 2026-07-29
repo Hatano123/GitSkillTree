@@ -819,7 +819,7 @@ export default function App() {
         <main className="flex-1 flex flex-col lg:flex-row relative z-10 min-h-[calc(100vh-73px)]">
           
           {/* Left panel: Aptitude Radar Chart */}
-          <section className="w-full lg:w-96 border-r border-slate-900 bg-slate-950/40 backdrop-blur-xl p-6 flex flex-col justify-between shrink-0 overflow-y-auto max-h-[calc(100vh-73px)]">
+          <section className="w-full lg:w-80 border-r border-slate-900 bg-slate-950/40 backdrop-blur-xl p-5 flex flex-col justify-between shrink-0 overflow-y-auto max-h-[calc(100vh-73px)]">
             
             <div className="space-y-6">
               
@@ -1043,37 +1043,37 @@ export default function App() {
             )}
 
             {/* Tree Map Legend */}
-            <div className="absolute bottom-4 left-4 right-4 lg:right-auto bg-slate-950/90 border border-slate-900 backdrop-blur-md p-4 rounded-xl shadow-2xl text-sm space-y-3 z-30 max-w-2xl">
-              <h4 className="text-sm font-bold uppercase tracking-wide text-white">スキルマップの凡例</h4>
-              <div className="flex flex-wrap items-center gap-4 text-slate-400">
-                <div className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+            <div className="absolute bottom-3 left-3 right-3 lg:right-auto bg-slate-950/90 border border-slate-900 backdrop-blur-md p-2 rounded-lg shadow-2xl text-[10px] leading-tight space-y-1.5 z-30 max-w-md">
+              <h4 className="text-[10px] font-bold uppercase tracking-wide text-white">スキルマップの凡例</h4>
+              <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-slate-400">
+                <div className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
                   <span>取得済み</span>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded bg-amber-400 animate-unlock-sparkle" />
+                <div className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded bg-amber-400 animate-unlock-sparkle" />
                   <span>✨ 今回新しく解放 (点滅)</span>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded bg-amber-400 animate-pulse" />
+                <div className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded bg-amber-400 animate-pulse" />
                   <span>おすすめ (次の一手)</span>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded bg-slate-700" />
+                <div className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded bg-slate-700" />
                   <span>未開放 (ロック中)</span>
                 </div>
               </div>
-              <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-slate-800/80 pt-2.5 text-xs text-slate-400">
-                <div className="flex items-center gap-2">
-                  <span className="block h-px w-8 bg-slate-500" />
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-slate-800/80 pt-1.5 text-[10px] text-slate-400">
+                <div className="flex items-center gap-1.5">
+                  <span className="block h-px w-6 bg-slate-500" />
                   <span>実線：技術の関連</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="block w-8 border-t-2 border-dashed border-emerald-400" />
+                <div className="flex items-center gap-1.5">
+                  <span className="block w-6 border-t-2 border-dashed border-emerald-400" />
                   <span>緑の点線：今回伸びた枝</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="block w-8 border-t-2 border-dashed border-amber-400" />
+                <div className="flex items-center gap-1.5">
+                  <span className="block w-6 border-t-2 border-dashed border-amber-400" />
                   <span>黄色の点線：次の一手</span>
                 </div>
               </div>

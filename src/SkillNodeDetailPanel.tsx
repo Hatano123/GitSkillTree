@@ -67,14 +67,14 @@ export default function SkillNodeDetailPanel({
         role="dialog"
         aria-modal="true"
         aria-labelledby="skill-detail-title"
-        className="skill-detail-panel pointer-events-auto absolute bottom-0 left-0 right-0 max-h-[78%] overflow-y-auto rounded-t-3xl border-t border-slate-800 bg-[#0b0f19]/96 shadow-[0_-16px_48px_rgba(0,0,0,0.42)] lg:bottom-0 lg:left-auto lg:right-0 lg:top-0 lg:h-full lg:max-h-none lg:w-[600px] lg:rounded-none lg:rounded-l-3xl lg:border-l lg:border-t-0 lg:shadow-[-18px_0_48px_rgba(0,0,0,0.38)]"
+        className="skill-detail-panel pointer-events-auto absolute bottom-0 left-0 right-0 max-h-[78%] overflow-y-auto rounded-t-3xl border-t border-slate-800 bg-[#0b0f19]/96 shadow-[0_-16px_48px_rgba(0,0,0,0.42)] lg:bottom-0 lg:left-auto lg:right-0 lg:top-0 lg:h-full lg:max-h-none lg:w-[420px] lg:rounded-none lg:rounded-l-3xl lg:border-l lg:border-t-0 lg:shadow-[-18px_0_48px_rgba(0,0,0,0.38)]"
       >
-        <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-slate-800 bg-[#0b0f19]/95 px-7 py-6 backdrop-blur-xl">
+        <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-slate-800 bg-[#0b0f19]/95 px-5 py-4 backdrop-blur-xl">
           <div className="min-w-0">
-            <p className="mb-1.5 text-xs font-black uppercase tracking-[0.22em] text-slate-500">
+            <p className="mb-1 text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">
               Skill Node Detail
             </p>
-            <h2 id="skill-detail-title" className="truncate text-4xl font-black text-white">
+            <h2 id="skill-detail-title" className="truncate text-2xl font-black text-white">
               {nodeData.label}
             </h2>
           </div>
@@ -82,28 +82,28 @@ export default function SkillNodeDetailPanel({
             type="button"
             onClick={onClose}
             aria-label="閉じる"
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-700 bg-slate-900 text-slate-300 transition-colors hover:border-slate-500 hover:bg-slate-800 hover:text-white"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-700 bg-slate-900 text-slate-300 transition-colors hover:border-slate-500 hover:bg-slate-800 hover:text-white"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        <div className="space-y-8 px-7 py-7">
+        <div className="space-y-5 px-5 py-5">
           <div className="flex items-center justify-between gap-3">
-            <span className="text-sm font-bold uppercase tracking-widest text-slate-500">
+            <span className="text-xs font-bold uppercase tracking-widest text-slate-500">
               開放状態
             </span>
-            <span className={`inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-sm font-black tracking-wider ${statusStyle.className}`}>
-              <StatusIcon className="h-4 w-4" />
+            <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-black tracking-wider ${statusStyle.className}`}>
+              <StatusIcon className="h-3.5 w-3.5" />
               {statusStyle.label}
             </span>
           </div>
 
           <section>
-            <h3 className="mb-3 text-base font-black uppercase tracking-wider text-slate-300">
+            <h3 className="mb-2 text-sm font-black uppercase tracking-wider text-slate-300">
               技術について
             </h3>
-            <p className="text-lg leading-8 text-slate-400">
+            <p className="text-sm leading-6 text-slate-400">
               {detail?.description ?? nodeData.description}
             </p>
           </section>
@@ -177,9 +177,9 @@ export default function SkillNodeDetailPanel({
               </section>
             </>
           ) : (
-            <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/40 p-5">
-              <p className="text-base font-bold text-slate-300">詳細データは準備中です</p>
-              <p className="mt-2 text-sm leading-6 text-slate-500">
+            <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/40 p-4">
+              <p className="text-sm font-bold text-slate-300">詳細データは準備中です</p>
+              <p className="mt-1.5 text-xs leading-5 text-slate-500">
                 このノードは現在、基本情報のみ表示しています。
               </p>
             </div>
