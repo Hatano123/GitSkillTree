@@ -114,52 +114,52 @@ const CustomNode: React.FC<NodeProps> = ({ id, data }) => {
         
         {/* Sparkle star for unlocked state */}
         {nodeData.state === 'unlocked' && (
-          <span className="absolute -bottom-1 -right-1 bg-amber-400 text-slate-950 text-[8px] font-black px-1 rounded-full shadow-md animate-bounce">
+          <span className="absolute -bottom-1 -right-2 rounded-full bg-amber-400 px-1.5 py-0.5 text-[11px] font-black text-slate-950 shadow-md animate-bounce">
             NEW!
           </span>
         )}
       </div>
 
       {/* Label tag under the circle */}
-      <div className={`mt-2 text-center transition-opacity ${isLocked ? 'opacity-25 group-hover:opacity-100' : ''}`}>
+      <div className={`mt-2 text-center transition-opacity ${isLocked ? 'opacity-40 group-hover:opacity-100' : ''}`}>
         {isCategory && (
-          <span className={`mb-1 block text-[8px] font-black uppercase tracking-[0.22em] ${categoryColors.text}`}>
+          <span className={`mb-1.5 block text-[11px] font-black uppercase tracking-[0.22em] ${categoryColors.text}`}>
             Category
           </span>
         )}
-        <span className={`${isCategory ? 'text-sm px-3 py-1' : 'text-[10px] px-2 py-0.5'} font-black text-slate-200 tracking-wider whitespace-nowrap bg-slate-950/90 rounded border border-slate-900/80 shadow-md`}>
+        <span className={`${isCategory ? 'text-xl px-4 py-1.5' : 'text-base px-3 py-1'} font-black text-slate-100 tracking-wide whitespace-nowrap bg-slate-950/95 rounded-md border border-slate-800 shadow-lg`}>
           {nodeData.label}
         </span>
       </div>
 
       {/* Tooltip info */}
-      <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-3 w-64 p-3 rounded-xl bg-slate-950/95 border border-slate-800 shadow-2xl text-xs text-slate-300 opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity duration-200 z-[9999]">
-        <div className="flex items-center gap-1.5 mb-1">
+      <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-3 w-80 p-4 rounded-xl bg-slate-950/95 border border-slate-800 shadow-2xl text-sm text-slate-300 opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity duration-200 z-[9999]">
+        <div className="flex items-center gap-2 mb-2">
           <span className={`w-2.5 h-2.5 rounded-full ${
             nodeData.state === 'acquired' ? 'bg-emerald-400' : 
             nodeData.state === 'unlocked' ? 'bg-amber-400 animate-ping' : 
             nodeData.state === 'recommended' ? 'bg-amber-400' : 'bg-slate-700'
           }`} />
-          <p className="font-bold text-white uppercase tracking-wider">{nodeData.label}</p>
+          <p className="text-base font-bold text-white uppercase tracking-wider">{nodeData.label}</p>
         </div>
         
-        <p className="leading-relaxed text-[11px] text-slate-400 mb-2">{nodeData.description}</p>
+        <p className="mb-3 text-sm leading-relaxed text-slate-300">{nodeData.description}</p>
         
         {/* Custom unlock instructions if locked or recommended */}
         {nodeData.state !== 'acquired' && nodeData.state !== 'unlocked' && (
-          <div className="bg-slate-900/80 border border-slate-800/60 p-2 rounded-lg mb-2">
-            <p className="text-[10px] font-bold text-amber-400 mb-0.5">🔓 解放条件（次の一手）</p>
-            <p className="text-[10px] text-slate-300 leading-normal">{UNLOCK_TIPS[id] || '公開リポジトリでこの技術を使用してください。'}</p>
+          <div className="mb-3 rounded-lg border border-slate-800/60 bg-slate-900/80 p-3">
+            <p className="mb-1 text-sm font-bold text-amber-400">🔓 解放条件（次の一手）</p>
+            <p className="text-sm leading-relaxed text-slate-300">{UNLOCK_TIPS[id] || '公開リポジトリでこの技術を使用してください。'}</p>
           </div>
         )}
 
         {nodeData.state === 'unlocked' && (
-          <div className="bg-emerald-500/10 border border-emerald-500/20 p-2 rounded-lg mb-2 text-[10px] text-emerald-400">
+          <div className="mb-3 rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm text-emerald-400">
             🎉 前回のスキャンから新しく習得（解放）されました！
           </div>
         )}
 
-        <div className="mt-1.5 flex items-center justify-between text-[9px] font-mono text-slate-500 border-t border-slate-900 pt-1.5">
+        <div className="mt-2 flex items-center justify-between border-t border-slate-900 pt-2 text-xs font-mono text-slate-500">
           <span>GENRE: {nodeData.category.toUpperCase()}</span>
           <span className={
             nodeData.state === 'acquired' ? 'text-emerald-400 font-bold' : 

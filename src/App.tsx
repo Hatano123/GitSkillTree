@@ -1005,8 +1005,8 @@ export default function App() {
             )}
 
             {/* Tree Map Legend */}
-            <div className="absolute bottom-4 left-4 right-4 lg:right-auto bg-slate-950/90 border border-slate-900 backdrop-blur-md p-3.5 rounded-xl shadow-2xl text-xs space-y-3 z-30 max-w-xl">
-              <h4 className="font-bold text-white text-[11px] tracking-wide uppercase">スキルマップの凡例</h4>
+            <div className="absolute bottom-4 left-4 right-4 lg:right-auto bg-slate-950/90 border border-slate-900 backdrop-blur-md p-4 rounded-xl shadow-2xl text-sm space-y-3 z-30 max-w-2xl">
+              <h4 className="text-sm font-bold uppercase tracking-wide text-white">スキルマップの凡例</h4>
               <div className="flex flex-wrap items-center gap-4 text-slate-400">
                 <div className="flex items-center gap-1.5">
                   <span className="w-2.5 h-2.5 rounded bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
@@ -1025,7 +1025,7 @@ export default function App() {
                   <span>未開放 (ロック中)</span>
                 </div>
               </div>
-              <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-slate-800/80 pt-2.5 text-[10px] text-slate-400">
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-slate-800/80 pt-2.5 text-xs text-slate-400">
                 <div className="flex items-center gap-2">
                   <span className="block h-px w-8 bg-slate-500" />
                   <span>実線：技術の関連</span>
