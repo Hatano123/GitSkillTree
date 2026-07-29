@@ -1,4 +1,9 @@
 import type { UserMetadata } from './github';
+import {
+  evaluateEvidenceDetectionRules,
+  type DetectionEvidence,
+} from './evidenceDetectionRules';
+import { factsFromLegacyMetadata } from './repositoryFacts';
 
 /**
  * Deterministic node detection - no API calls, no AI.
@@ -41,9 +46,6 @@ const NODE_DETECTION_RULES: Record<string, {
   },
   python: {
     languages: ['Python'],
-  },
-  react: {
-    deps: ['react', 'react-dom', 'react-native'],
   },
   vue: {
     deps: ['vue', 'nuxt'],
@@ -88,9 +90,6 @@ const NODE_DETECTION_RULES: Record<string, {
   java: {
     languages: ['Java', 'Kotlin'],
   },
-  fastapi: {
-    repoCheck: mentions(['fastapi']),
-  },
   django: {
     repoCheck: mentions(['django']),
   },
@@ -120,14 +119,6 @@ const NODE_DETECTION_RULES: Record<string, {
   },
   postgresql: {
     deps: ['pg', 'prisma', '@prisma/client', 'typeorm', 'knex', 'sequelize', 'drizzle-orm'],
-  },
-  docker: {
-    repoCheck: (repos) => repos.some(r =>
-      r.name.toLowerCase().includes('docker') ||
-      r.description.toLowerCase().includes('docker') ||
-      r.description.toLowerCase().includes('container')
-    ),
-    deps: ['dockerode'],
   },
   aws: {
     deps: ['aws-sdk', '@aws-sdk/client-s3', '@aws-sdk/lib-dynamodb', 'aws-cdk-lib'],
@@ -177,9 +168,6 @@ const NODE_DETECTION_RULES: Record<string, {
     deps: ['@sentry/node', '@sentry/react', 'prom-client', 'newrelic', 'dd-trace'],
     repoCheck: mentions(['monitoring', 'prometheus', 'grafana', 'observability']),
   },
-  pytorch: {
-    deps: ['torch', 'pytorch', 'torchvision'],
-  },
   numpy: {
     repoCheck: mentions(['numpy']),
   },
@@ -210,10 +198,6 @@ const NODE_DETECTION_RULES: Record<string, {
   },
   langchain: {
     deps: ['langchain', '@langchain/core', '@langchain/openai'],
-  },
-  http: {
-    deps: ['axios', 'got', 'undici', 'node-fetch'],
-    repoCheck: mentions(['http server', 'http client']),
   },
   tcp: {
     repoCheck: mentions([' tcp ', 'tcp server', 'tcp client']),
@@ -256,7 +240,12 @@ const NODE_DETECTION_RULES: Record<string, {
  * Detect which skill nodes are acquired based on existing metadata.
  * Pure logic - no API calls, runs instantly.
  */
-export function detectAcquiredNodes(metadata: UserMetadata): string[] {
+export type NodeDetectionResult = {
+  acquiredNodeIds: string[];
+  evidenceByNodeId: Record<string, DetectionEvidence[]>;
+};
+
+export function detectAcquiredNodesWithEvidence(metadata: UserMetadata): NodeDetectionResult {
   const acquired: string[] = [];
   const languages = new Set(Object.keys(metadata.aggregatedLanguages));
   const deps = new Set(metadata.packageJsonDeps.map(d => d.toLowerCase()));
@@ -294,5 +283,18 @@ export function detectAcquiredNodes(metadata: UserMetadata): string[] {
     }
   }
 
-  return acquired;
+  const repositoryFacts = metadata.repositoryFacts ?? factsFromLegacyMetadata(
+    [...languages],
+    [...deps],
+  );
+  const evidenceByNodeId = evaluateEvidenceDetectionRules(repositoryFacts);
+  for (const nodeId of Object.keys(evidenceByNodeId)) {
+    if (!acquired.includes(nodeId)) acquired.push(nodeId);
+  }
+
+  return { acquiredNodeIds: acquired, evidenceByNodeId };
+}
+
+export function detectAcquiredNodes(metadata: UserMetadata): string[] {
+  return detectAcquiredNodesWithEvidence(metadata).acquiredNodeIds;
 }

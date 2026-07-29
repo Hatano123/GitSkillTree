@@ -1,3 +1,9 @@
+import {
+  collectRepositoryFacts,
+  factsFromLegacyMetadata,
+  type RepositoryFacts,
+} from './repositoryFacts';
+
 export interface UserMetadata {
   username: string;
   avatarUrl: string;
@@ -7,9 +13,11 @@ export interface UserMetadata {
     description: string;
     language: string;
     stars: number;
+    defaultBranch: string;
   }[];
   aggregatedLanguages: Record<string, number>;
   packageJsonDeps: string[];
+  repositoryFacts: RepositoryFacts;
   recentEvents: {
     type: string;
     repoName: string;
@@ -25,12 +33,16 @@ function getMockUserMetadata(username: string): UserMetadata {
     avatarUrl: 'https://avatars.githubusercontent.com/u/9919?v=4', // GitHub logo
     publicReposCount: 15,
     repositories: [
-      { name: 'mock-repo-1', description: 'React app', language: 'TypeScript', stars: 10 },
-      { name: 'mock-repo-2', description: 'Backend API', language: 'JavaScript', stars: 5 },
-      { name: 'mock-repo-3', description: 'Scripts', language: 'Python', stars: 2 }
+      { name: 'mock-repo-1', description: 'React app', language: 'TypeScript', stars: 10, defaultBranch: 'main' },
+      { name: 'mock-repo-2', description: 'Backend API', language: 'JavaScript', stars: 5, defaultBranch: 'main' },
+      { name: 'mock-repo-3', description: 'Scripts', language: 'Python', stars: 2, defaultBranch: 'main' }
     ],
     aggregatedLanguages: { TypeScript: 5, JavaScript: 3, Python: 2 },
     packageJsonDeps: ['react', 'next', 'tailwindcss', 'express', 'pg'],
+    repositoryFacts: factsFromLegacyMetadata(
+      ['TypeScript', 'JavaScript', 'Python'],
+      ['react', 'next', 'tailwindcss', 'express', 'pg'],
+    ),
     recentEvents: [
       {
         type: 'PushEvent',
@@ -87,7 +99,8 @@ export async function fetchUserMetadata(username: string, sinceTimestamp?: strin
       name: repo.name,
       description: repo.description || '',
       language: repo.language || '',
-      stars: repo.stargazers_count || 0
+      stars: repo.stargazers_count || 0,
+      defaultBranch: repo.default_branch || 'main',
     }));
 
   // Aggregate languages
@@ -137,46 +150,11 @@ export async function fetchUserMetadata(username: string, sinceTimestamp?: strin
     console.warn('Failed to fetch recent events:', e);
   }
 
-  // Extract package dependencies from top starred repos
-  const topRepos = [...repositories]
-    .sort((a, b) => b.stars - a.stars)
-    .slice(0, 3);
-
-  const packageJsonDepsSet = new Set<string>();
-
-  const packageResults = await Promise.allSettled(
-    topRepos.map(async (repo) => {
-      const pkgRes = await fetch(`https://api.github.com/repos/${cleanUsername}/${repo.name}/contents/package.json`);
-      if (!pkgRes.ok) return [];
-
-      const pkgData = await pkgRes.json();
-      if (!pkgData.content) return [];
-
-      const decoded = decodeURIComponent(escape(atob(pkgData.content.replace(/\s/g, ''))));
-      const parsedPkg = JSON.parse(decoded);
-      const deps = {
-        ...parsedPkg.dependencies,
-        ...parsedPkg.devDependencies
-      };
-
-      const noisePackages = [
-        'typescript', 'eslint', 'prettier', 'ts-node', 'nodemon', 'husky', 'lint-staged'
-      ];
-
-      return Object.keys(deps).filter((dep) =>
-        !dep.startsWith('@types/') && !noisePackages.some((noisePackage) => dep.includes(noisePackage))
-      );
-    })
-  );
-
-  // A missing or malformed package.json must not block analysis of other repos.
-  packageResults.forEach((result) => {
-    if (result.status === 'fulfilled') {
-      result.value.forEach((dep) => packageJsonDepsSet.add(dep));
-    } else {
-      console.warn('Failed to read a repository package.json:', result.reason);
-    }
-  });
+  // Build one bounded repository evidence index, then let fixed rules evaluate it.
+  const repositoryFacts = await collectRepositoryFacts(cleanUsername, repositories);
+  const packageJsonDeps = [...new Set(repositoryFacts.records
+    .filter((record) => record.kind === 'dependency' && record.path.toLowerCase().endsWith('package.json'))
+    .map((record) => record.value))];
 
   return {
     username: userData.login,
@@ -184,7 +162,8 @@ export async function fetchUserMetadata(username: string, sinceTimestamp?: strin
     publicReposCount: userData.public_repos || reposData.length,
     repositories,
     aggregatedLanguages,
-    packageJsonDeps: Array.from(packageJsonDepsSet),
+    packageJsonDeps,
+    repositoryFacts,
     recentEvents
   };
 }
