@@ -1,13 +1,34 @@
 export type SkillNodeState = 'acquired' | 'recommended' | 'locked' | 'unlocked';
+export type SkillNodeStatus = 'locked' | 'unlocked' | 'new';
 
 export type SkillCategory = 'network' | 'infra' | 'backend' | 'frontend' | 'ai';
 
 export interface SkillNodeData {
+  [key: string]: unknown;
   label: string;
   state: SkillNodeState;
   category: SkillCategory;
   description: string;
   iconName: string;
+  status?: SkillNodeStatus;
+  layer?: number;
+  recommended?: boolean;
+  kind?: 'skill' | 'category' | 'hub';
+  detectedCount?: number;
+  onClick?: () => void;
+  detectionNodeIds?: string[];
+}
+
+export interface SkillTreeNode {
+  id: string;
+  label: string;
+  category: SkillCategory;
+  layer: number;
+  detectionNodeIds: string[];
+  relatedNodeIds: string[];
+  description: string;
+  iconName: string;
+  position: { x: number; y: number };
 }
 
 export interface RadarDataPoint {
@@ -41,5 +62,6 @@ export interface ScanRecord {
   unlockedNodeIds: string[];
   previousScanId: string | null;
   customLogs: string[];
+  detectionEvidence?: Record<string, import('./evidenceDetectionRules').DetectionEvidence[]>;
 }
 

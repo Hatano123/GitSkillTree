@@ -20,14 +20,17 @@ import {
 } from 'lucide-react';
 
 import CustomNode from './CustomNode';
-import { ARCHETYPES, INITIAL_NODES, INITIAL_EDGES, MOCK_REPOS } from './mockData';
+import CircularEdge from './CircularEdge';
+import SkillNodeDetailPanel from './SkillNodeDetailPanel';
+import { ARCHETYPES, MOCK_REPOS } from './mockData';
+import { FIXED_TREE_FLOW_NODES, FIXED_TREE_FLOW_EDGES } from './skillTree';
 import { saveScan, getScanById, getLatestScanByUsername } from './firebase';
 import { fetchUserMetadata } from './github';
-import { detectAcquiredNodes } from './detectNodes';
+import { detectAcquiredNodesWithEvidence } from './detectNodes';
 import { generateExplanationWithGemini } from './gemini';
 import type { AnalysisResult } from './gemini';
 import { evaluateNodes, fallbackExplanation, getScoreBreakdown } from './evaluation';
-import type { ScanRecord } from './types';
+import type { ScanRecord, SkillNodeData } from './types';
 
 const GithubIcon = () => (
   <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -38,6 +41,9 @@ const GithubIcon = () => (
 
 const nodeTypes = {
   custom: CustomNode,
+};
+const edgeTypes = {
+  circular: CircularEdge,
 };
 
 const SCAN_CACHE_DURATION_MS = 10 * 60 * 1000;
@@ -51,6 +57,7 @@ function toAnalysisResult(scan: ScanRecord): AnalysisResult {
     recommendedNodeIds: scan.recommendedNodeIds,
     unlockedNodeIds: scan.unlockedNodeIds,
     customLogs: scan.customLogs,
+    detectionEvidence: scan.detectionEvidence,
   };
 }
 
@@ -86,10 +93,19 @@ export default function App() {
   const [isShareCopied, setIsShareCopied] = useState(false);
   const [isDemoGrowthActive, setIsDemoGrowthActive] = useState(false);
   const [isScoreBreakdownOpen, setIsScoreBreakdownOpen] = useState(false);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
   // Flow State
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  const selectedNode = useMemo(
+    () => nodes.find((node) => node.id === selectedNodeId) ?? null,
+    [nodes, selectedNodeId],
+  );
+
+  useEffect(() => {
+    if (screen !== 'result') setSelectedNodeId(null);
+  }, [screen]);
 
   // 1. URL ID Param check on mount
   useEffect(() => {
@@ -110,7 +126,8 @@ export default function App() {
             acquiredNodeIds: record.acquiredNodeIds,
             recommendedNodeIds: record.recommendedNodeIds,
             unlockedNodeIds: record.unlockedNodeIds,
-            customLogs: record.customLogs
+            customLogs: record.customLogs,
+            detectionEvidence: record.detectionEvidence,
           });
           
           if (record.previousScanId) {
@@ -216,7 +233,8 @@ export default function App() {
 
       // Step 2: Deterministic node detection (instant)
       t0 = performance.now();
-      const detectedNodes = detectAcquiredNodes(metadata);
+      const detectionResult = detectAcquiredNodesWithEvidence(metadata);
+      const detectedNodes = detectionResult.acquiredNodeIds;
       setTimingLogs(prev => [...prev, { label: LOADING_STEP_LABELS[2], ms: Math.round(performance.now() - t0) }]);
       setLoadingStep(3);
 
@@ -232,7 +250,11 @@ export default function App() {
       setTimingLogs(prev => [...prev, { label: LOADING_STEP_LABELS[3], ms: Math.round(performance.now() - t0) }]);
       setLoadingStep(4);
 
-      setCustomAnalysisResult({ ...evaluation, customLogs });
+      setCustomAnalysisResult({
+        ...evaluation,
+        customLogs,
+        detectionEvidence: detectionResult.evidenceByNodeId,
+      });
       setAnalysisResultSource('fresh');
     } catch (err: any) {
       console.error(err);
@@ -301,7 +323,19 @@ export default function App() {
           '🎉 前回のスキャンから新たに Next.js が導入されました！フロントエンド技術が一段と強化されています。',
           '🐳 Dockerfileのコミットを検知！インフラノード Docker が新しく解放されました。',
           'コミット差分により、新たに2つの技術スタックがアンロックされました！素晴らしい成長です！'
-        ]
+        ],
+        detectionEvidence: {
+          react: [{
+            repository: 'frontend-app',
+            path: 'package.json',
+            reason: 'react 依存を検出（React）',
+          }],
+          docker: [{
+            repository: 'frontend-app',
+            path: 'Dockerfile',
+            reason: 'Dockerfileを検出',
+          }],
+        },
       });
 
       setScreen('result');
@@ -327,7 +361,19 @@ export default function App() {
           '🎉 前回のスキャンから新たに Next.js が導入されました！フロントエンド技術が一段と強化されています。',
           '🐳 Dockerfileのコミットを検知！インフラノード Docker が新しく解放されました。',
           'コミット差分により、新たに2つの技術スタックがアンロックされました！素晴らしい成長です！'
-        ]
+        ],
+        detectionEvidence: {
+          react: [{
+            repository: 'frontend-app',
+            path: 'package.json',
+            reason: 'react 依存を検出（React）',
+          }],
+          docker: [{
+            repository: 'frontend-app',
+            path: 'Dockerfile',
+            reason: 'Dockerfileを検出',
+          }],
+        },
       }).then((docId) => {
         setSavedScanId(docId);
       });
@@ -372,6 +418,7 @@ export default function App() {
       const recommendedNodeIds = customAnalysisResult.recommendedNodeIds;
       const unlockedNodeIds = customAnalysisResult.unlockedNodeIds;
       const customLogs = customAnalysisResult.customLogs;
+      const detectionEvidence = customAnalysisResult.detectionEvidence;
 
       saveScan({
         username: githubUsername,
@@ -383,7 +430,8 @@ export default function App() {
         recommendedNodeIds,
         unlockedNodeIds,
         previousScanId: previousScan ? (previousScan.id || null) : null,
-        customLogs
+        customLogs,
+        ...(detectionEvidence ? { detectionEvidence } : {}),
       }).then((docId) => {
         setSavedScanId(docId);
       });
@@ -410,20 +458,22 @@ export default function App() {
       recommendedIds = currentArchetype.recommendedNodeIds;
     }
 
-    const flowNodes = INITIAL_NODES.map((node) => {
+    const skillNodes = FIXED_TREE_FLOW_NODES.map((node) => {
       let state: 'acquired' | 'recommended' | 'locked' | 'unlocked' = 'locked';
-      
-      if (unlockedIds.includes(node.id)) {
+
+      const detectionNodeIds = node.data.detectionNodeIds ?? [node.id];
+      if (detectionNodeIds.some((id) => unlockedIds.includes(id))) {
         state = 'unlocked';
-      } else if (acquiredIds.includes(node.id)) {
+      } else if (detectionNodeIds.some((id) => acquiredIds.includes(id))) {
         state = 'acquired';
-      } else if (recommendedIds.includes(node.id)) {
+      } else if (detectionNodeIds.some((id) => recommendedIds.includes(id))) {
         state = 'recommended';
       }
 
       return {
         id: node.id,
         type: 'custom',
+        zIndex: 10,
         position: node.position,
         data: {
           ...node.data,
@@ -432,27 +482,44 @@ export default function App() {
       };
     });
 
-    const flowEdges = INITIAL_EDGES.map((edge) => {
-      const isSourceAcquired = acquiredIds.includes(edge.source) || unlockedIds.includes(edge.source);
-      const isTargetAcquired = acquiredIds.includes(edge.target) || unlockedIds.includes(edge.target);
-      const isTargetRecommended = recommendedIds.includes(edge.target);
+    const flowNodes: Node[] = skillNodes;
+    const nodeState = new Map(skillNodes.map((node) => [node.id, node.data.state]));
+    const categoryEdgeColors = {
+      frontend: '#9d174d',
+      backend: '#6d28d9',
+      infra: '#b45309',
+      ai: '#0e7490',
+      network: '#047857',
+    };
+    const flowEdges = FIXED_TREE_FLOW_EDGES.map((edge) => {
+      const isSourceAcquired = nodeState.get(edge.source) === 'acquired' || nodeState.get(edge.source) === 'unlocked';
+      const isTargetRecommended = nodeState.get(edge.target) === 'recommended';
 
-      let strokeColor = '#334155';
+      let strokeColor = edge.groupEdge ? categoryEdgeColors[edge.category] : '#475569';
       let animated = false;
+      let strokeDasharray: string | undefined;
 
-      if (isSourceAcquired && isTargetAcquired) {
+      if (nodeState.get(edge.target) === 'unlocked') {
         strokeColor = '#10b981';
         animated = true;
+        strokeDasharray = '6 7';
       } else if (isSourceAcquired && isTargetRecommended) {
         strokeColor = '#fbbf24';
         animated = true;
+        strokeDasharray = '4 7';
       }
 
       return {
         ...edge,
-        animated: edge.animated || animated,
-        style: { stroke: strokeColor, strokeWidth: 2 },
-        markerEnd: {
+        animated,
+        zIndex: -10,
+        style: {
+          stroke: strokeColor,
+          strokeWidth: edge.groupEdge ? 1.25 : 2,
+          strokeDasharray,
+          opacity: edge.groupEdge ? 0.55 : 0.8,
+        },
+        markerEnd: edge.groupEdge ? undefined : {
           type: MarkerType.ArrowClosed,
           color: strokeColor,
         },
@@ -575,7 +642,7 @@ export default function App() {
             </h2>
             <p className="text-slate-400 text-sm md:text-base leading-relaxed">
               初回スキャンで「ベースライン」を作成。開発した後に再スキャンすると、<br />
-              <strong>前回から伸びた適性スコアの差分</strong>と<strong>新しく解放された技術（アンロック演出）</strong>を実感できます。
+              <strong>前回から広がった技術経験の差分</strong>と<strong>新しく解放された技術（アンロック演出）</strong>を実感できます。
             </p>
           </div>
 
@@ -815,7 +882,7 @@ export default function App() {
               <div className={`p-4 rounded-xl border transition-all duration-300 ${archetype.themeColor}`}>
                 <div className="flex items-center gap-2 mb-2">
                   <Award className="w-5 h-5 shrink-0" />
-                  <h3 className="font-bold text-sm tracking-wide text-white">エンジニア適性タイプ</h3>
+                  <h3 className="font-bold text-sm tracking-wide text-white">技術経験プロファイル</h3>
                 </div>
                 <h4 className="text-base font-extrabold mb-2 text-white">
                   {archetype.name}
@@ -829,7 +896,7 @@ export default function App() {
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">
-                    {previousScan ? '成長の軌跡 (比較)' : '適性グラフ'}
+                    {previousScan ? '技術経験の変化 (比較)' : '技術経験の分布'}
                   </h3>
                   <div className="text-[10px] font-mono flex items-center gap-2">
                     {previousScan && (
@@ -849,7 +916,7 @@ export default function App() {
                       className="ml-1 inline-flex items-center gap-1 rounded border border-cyan-500/30 bg-cyan-500/10 px-2 py-1 text-cyan-300 hover:bg-cyan-500/20 transition-colors"
                     >
                       <Info className="w-3 h-3" />
-                      評価の根拠
+                      検出の根拠
                     </button>
                   </div>
                 </div>
@@ -949,6 +1016,9 @@ export default function App() {
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
               nodeTypes={nodeTypes}
+              edgeTypes={edgeTypes}
+              nodesDraggable={false}
+              onNodeClick={(_, node) => setSelectedNodeId(node.id)}
               connectionLineType={ConnectionLineType.SmoothStep}
               fitView
               fitViewOptions={{ padding: 0.15 }}
@@ -959,9 +1029,22 @@ export default function App() {
               <Controls position="top-right" className="!bg-slate-950 !border-slate-800 !text-slate-300 shadow-2xl [&_button]:!bg-slate-900 [&_button]:!border-slate-800 [&_button]:!text-slate-300 [&_button:hover]:!bg-slate-800" />
             </ReactFlow>
 
+            {selectedNode && (
+              <SkillNodeDetailPanel
+                nodeId={selectedNode.id}
+                nodeData={selectedNode.data as unknown as SkillNodeData}
+                evidence={(
+                  (selectedNode.data as unknown as SkillNodeData).detectionNodeIds ?? [selectedNode.id]
+                ).flatMap((detectionNodeId) =>
+                  customAnalysisResult?.detectionEvidence?.[detectionNodeId] ?? []
+                )}
+                onClose={() => setSelectedNodeId(null)}
+              />
+            )}
+
             {/* Tree Map Legend */}
-            <div className="absolute bottom-4 left-4 right-4 lg:right-auto bg-slate-950/90 border border-slate-900 backdrop-blur-md p-3.5 rounded-xl shadow-2xl text-xs space-y-2.5 z-30 max-w-md">
-              <h4 className="font-bold text-white text-[11px] tracking-wide uppercase">ツリー状態の凡例</h4>
+            <div className="absolute bottom-4 left-4 right-4 lg:right-auto bg-slate-950/90 border border-slate-900 backdrop-blur-md p-4 rounded-xl shadow-2xl text-sm space-y-3 z-30 max-w-2xl">
+              <h4 className="text-sm font-bold uppercase tracking-wide text-white">スキルマップの凡例</h4>
               <div className="flex flex-wrap items-center gap-4 text-slate-400">
                 <div className="flex items-center gap-1.5">
                   <span className="w-2.5 h-2.5 rounded bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
@@ -978,6 +1061,20 @@ export default function App() {
                 <div className="flex items-center gap-1.5">
                   <span className="w-2.5 h-2.5 rounded bg-slate-700" />
                   <span>未開放 (ロック中)</span>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-slate-800/80 pt-2.5 text-xs text-slate-400">
+                <div className="flex items-center gap-2">
+                  <span className="block h-px w-8 bg-slate-500" />
+                  <span>実線：技術の関連</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="block w-8 border-t-2 border-dashed border-emerald-400" />
+                  <span>緑の点線：今回伸びた枝</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="block w-8 border-t-2 border-dashed border-amber-400" />
+                  <span>黄色の点線：次の一手</span>
                 </div>
               </div>
             </div>

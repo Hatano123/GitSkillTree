@@ -1,11 +1,13 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import type { UserMetadata } from './github';
 import type { DeterministicEvaluation } from './evaluation';
+import type { DetectionEvidence } from './evidenceDetectionRules';
 
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 
 export interface AnalysisResult extends DeterministicEvaluation {
   customLogs: string[];
+  detectionEvidence?: Record<string, DetectionEvidence[]>;
 }
 
 function validateExplanation(value: unknown): string[] {
