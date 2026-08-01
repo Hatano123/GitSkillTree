@@ -238,6 +238,9 @@ export default function App() {
       } catch (geminiError) {
         console.warn('Gemini explanation failed; showing deterministic evaluation.', geminiError);
       }
+      if (metadata.scanWarnings.length > 0) {
+        customLogs = [...metadata.scanWarnings, ...customLogs].slice(0, 3);
+      }
       setTimingLogs(prev => [...prev, { label: LOADING_STEP_LABELS[3], ms: Math.round(performance.now() - t0) }]);
       setLoadingStep(4);
 

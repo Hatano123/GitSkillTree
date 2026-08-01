@@ -14,6 +14,7 @@ test('zero detections produce zero on every axis', () => {
   const result = calculateTechnologyTrend([]);
   assert.deepEqual(Object.values(result.values), [0, 0, 0, 0, 0]);
   assert.equal(evaluateNodes([]).dataStatus, 'insufficient');
+  assert.deepEqual(evaluateNodes(['git']).scores.map((point) => point.A), [0, 0, 0, 0, 0]);
 });
 
 test('same detected facts always produce the same evaluation', () => {

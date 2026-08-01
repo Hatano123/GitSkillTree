@@ -4,6 +4,7 @@ import type { SkillCategory } from './types';
 export interface NodeSignature {
   nodeId: string;
   category: SkillCategory;
+  always?: boolean;
   languages?: string[];
   dependencies?: string[];
   files?: string[];
@@ -16,12 +17,12 @@ export interface NodeSignature {
 export const NODE_SIGNATURES: readonly NodeSignature[] = [
   // Nodes without a defensible strong signal are kept as empty signatures and
   // therefore remain undetected until a strong signal can be defined.
-  { nodeId: 'git', category: 'infra' },
+  { nodeId: 'git', category: 'infra', always: true },
   { nodeId: 'html_css', category: 'frontend' },
-  { nodeId: 'html', category: 'frontend', languages: ['HTML'] },
-  { nodeId: 'css', category: 'frontend', languages: ['CSS', 'SCSS', 'Sass', 'Less'] },
-  { nodeId: 'javascript', category: 'frontend', languages: ['JavaScript'] },
-  { nodeId: 'typescript', category: 'frontend', languages: ['TypeScript'] },
+  { nodeId: 'html', category: 'frontend', languages: ['HTML'], files: ['*.html', '*.htm'] },
+  { nodeId: 'css', category: 'frontend', languages: ['CSS', 'SCSS', 'Sass', 'Less'], files: ['*.css', '*.scss', '*.sass', '*.less'] },
+  { nodeId: 'javascript', category: 'frontend', languages: ['JavaScript'], files: ['*.js', '*.jsx', '*.mjs', '*.cjs'] },
+  { nodeId: 'typescript', category: 'frontend', languages: ['TypeScript'], files: ['*.ts', '*.tsx', '*.mts', '*.cts'] },
   { nodeId: 'react', category: 'frontend', dependencies: ['react', 'react-dom', 'react-native'] },
   { nodeId: 'vue', category: 'frontend', dependencies: ['vue'] },
   { nodeId: 'vite', category: 'frontend', dependencies: ['vite'], files: ['vite.config.*'] },
@@ -34,21 +35,21 @@ export const NODE_SIGNATURES: readonly NodeSignature[] = [
   { nodeId: 'frontend_deployment', category: 'frontend', dependencies: ['vercel', 'netlify-cli', 'firebase-tools'], files: ['vercel.json', 'netlify.toml', 'firebase.json'] },
   { nodeId: 'deployment', category: 'frontend', dependencies: ['vercel', 'netlify-cli', 'firebase-tools'], files: ['vercel.json', 'netlify.toml', 'firebase.json'] },
 
-  { nodeId: 'python', category: 'backend', languages: ['Python'] },
+  { nodeId: 'python', category: 'backend', languages: ['Python'], files: ['*.py'] },
   { nodeId: 'nodejs', category: 'backend', dependencies: ['express', 'koa', 'fastify', 'hapi', '@nestjs/core'] },
-  { nodeId: 'java', category: 'backend', languages: ['Java', 'Kotlin'] },
+  { nodeId: 'java', category: 'backend', languages: ['Java', 'Kotlin'], files: ['*.java', '*.kt', '*.kts'] },
   { nodeId: 'fastapi', category: 'backend', dependencies: ['fastapi'] },
   { nodeId: 'express', category: 'backend', dependencies: ['express'] },
   { nodeId: 'django', category: 'backend', dependencies: ['django'] },
   { nodeId: 'rest_api', category: 'backend', dependencies: ['openapi-types'], files: ['openapi.yml', 'openapi.yaml', 'swagger.yml', 'swagger.yaml'] },
   { nodeId: 'database', category: 'backend', dependencies: ['pg', 'mysql2', 'mongoose', 'prisma', '@prisma/client', 'typeorm', 'sequelize', 'drizzle-orm'] },
-  { nodeId: 'sql', category: 'backend', languages: ['SQL', 'PLpgSQL'], dependencies: ['pg', 'mysql2', 'prisma', '@prisma/client', 'typeorm', 'knex', 'sequelize', 'drizzle-orm'] },
+  { nodeId: 'sql', category: 'backend', languages: ['SQL', 'PLpgSQL'], dependencies: ['pg', 'mysql2', 'prisma', '@prisma/client', 'typeorm', 'knex', 'sequelize', 'drizzle-orm'], files: ['*.sql'] },
   { nodeId: 'postgresql', category: 'backend', dependencies: ['pg'] },
   { nodeId: 'nosql', category: 'backend', dependencies: ['mongoose', 'mongodb', '@firebase/firestore', 'redis', 'ioredis'] },
   { nodeId: 'authentication', category: 'backend', dependencies: ['passport', 'jsonwebtoken', 'next-auth', '@auth/core', 'firebase-auth', '@clerk/nextjs'] },
   { nodeId: 'backend_testing', category: 'backend', dependencies: ['supertest', 'pytest', 'junit'] },
 
-  { nodeId: 'shell', category: 'infra', languages: ['Shell', 'PowerShell'] },
+  { nodeId: 'shell', category: 'infra', languages: ['Shell', 'PowerShell'], files: ['*.sh', '*.bash', '*.zsh', '*.ps1'] },
   { nodeId: 'linux', category: 'infra' },
   { nodeId: 'docker', category: 'infra', dependencies: ['dockerode'], files: ['Dockerfile', 'Dockerfile.*'] },
   { nodeId: 'docker_compose', category: 'infra', files: ['docker-compose.yml', 'docker-compose.yaml', 'compose.yml', 'compose.yaml'] },
@@ -64,7 +65,7 @@ export const NODE_SIGNATURES: readonly NodeSignature[] = [
   { nodeId: 'numpy', category: 'ai', dependencies: ['numpy'] },
   { nodeId: 'pandas', category: 'ai', dependencies: ['pandas'] },
   { nodeId: 'scikit_learn', category: 'ai', dependencies: ['scikit-learn'] },
-  { nodeId: 'opencv', category: 'ai', dependencies: ['opencv-python'] },
+  { nodeId: 'opencv', category: 'ai', dependencies: ['opencv', 'opencv4', 'opencv-python', 'opencv-python-headless', 'opencv-contrib-python', 'opencv-contrib-python-headless'] },
   { nodeId: 'pytorch', category: 'ai', dependencies: ['torch', 'pytorch', 'torchvision'] },
   { nodeId: 'tensorflow', category: 'ai', dependencies: ['tensorflow', 'keras'] },
   { nodeId: 'yolo', category: 'ai', dependencies: ['ultralytics'] },
@@ -108,7 +109,8 @@ export function detectNodesFromFacts(facts: DetectionFacts): string[] {
   const dependencies = new Set(facts.dependencies.map((value) => value.toLowerCase()));
 
   return NODE_SIGNATURES.filter((signature) =>
-    signature.languages?.some((value) => languages.has(value.toLowerCase()))
+    signature.always === true
+    || signature.languages?.some((value) => languages.has(value.toLowerCase()))
     || signature.dependencies?.some((value) => dependencies.has(value.toLowerCase()))
     || signature.files?.some((pattern) => facts.files.some((path) => matchesFile(pattern, path))),
   ).map((signature) => signature.nodeId);

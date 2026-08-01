@@ -27,7 +27,11 @@ export interface DeterministicEvaluation {
 
 const LEGACY_NODE_IDS = ['git', 'html_css', 'javascript', 'typescript', 'react', 'nextjs', 'tailwind', 'nodejs', 'express', 'postgresql', 'docker', 'aws', 'github_actions', 'python', 'pytorch', 'openai', 'langchain'];
 const NODE_IDS = [...new Set([...LEGACY_NODE_IDS, ...DETECTION_NODE_IDS])];
-const CATEGORY_BY_NODE = new Map(NODE_SIGNATURES.map((signature) => [signature.nodeId, signature.category]));
+// Always-visible foundation nodes are not detected technologies and therefore
+// do not affect the relative distribution.
+const CATEGORY_BY_NODE = new Map(
+  NODE_SIGNATURES.filter((signature) => !signature.always).map((signature) => [signature.nodeId, signature.category]),
+);
 
 function chooseArchetype(values: Record<SkillCategory, number>): DeterministicEvaluation['archetypeKey'] {
   if (values.ai > Math.max(values.infra, values.backend, values.frontend)) return 'ai';
