@@ -3,6 +3,18 @@ export type SkillNodeStatus = 'locked' | 'unlocked' | 'new';
 
 export type SkillCategory = 'network' | 'infra' | 'backend' | 'frontend' | 'ai';
 
+export interface DetectionEvidenceMatch {
+  type: 'always' | 'language' | 'dependency' | 'file';
+  value: string;
+  repository?: string;
+}
+
+export interface DetectionDebugInfo {
+  listedRepositoryCount: number;
+  detailedRepositories: { name: string; status: 'read' | 'partial' | 'failed' }[];
+  nodeEvidence: { nodeId: string; matches: DetectionEvidenceMatch[] }[];
+}
+
 export interface SkillNodeData {
   [key: string]: unknown;
   label: string;
@@ -62,6 +74,7 @@ export interface ScanRecord {
   detectedCounts?: Record<SkillCategory, number>;
   evaluationVersion?: string;
   dataStatus?: 'insufficient' | 'limited' | 'available';
+  detectionDebug?: DetectionDebugInfo;
   acquiredNodeIds: string[];
   recommendedNodeIds: string[];
   unlockedNodeIds: string[];

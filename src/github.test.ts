@@ -64,6 +64,9 @@ test('scan stays within its request budget and inspects ten non-forks', async ()
     assert.ok(urls.some((url) => url.includes('/recent-b/contents/requirements.txt')));
     assert.ok(!urls.some((url) => url.includes('/recent-b/contents/package.json')));
     assert.ok(metadata.dependencies.includes('opencv-python-headless'));
+    assert.equal(metadata.detailedRepositoryFacts.length, DETAILED_REPOSITORY_LIMIT);
+    assert.ok(metadata.detailedRepositoryFacts.find((repository) => repository.name === 'recent-b')?.dependencies.includes('opencv-python-headless'));
+    assert.ok(metadata.detailedRepositoryFacts.every((repository) => repository.status === 'read'));
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -84,6 +87,9 @@ test('a failed detail request does not fail the whole scan', async () => {
     assert.equal(metadata.aggregatedLanguages.Python, 1);
     assert.equal(metadata.scanCoverage.failedRepositories, 1);
     assert.equal(metadata.scanWarnings.length, 1);
+    assert.deepEqual(metadata.detailedRepositoryFacts, [
+      { name: 'repo', status: 'failed', dependencies: [], files: [] },
+    ]);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -109,6 +115,9 @@ test('rate exhaustion during details returns partial scan results', async () => 
     assert.equal(metadata.scanCoverage.inspectedRepositories, 1);
     assert.ok(metadata.scanWarnings[0].includes('取得済み情報'));
     assert.equal(metadata.aggregatedLanguages.TypeScript, 1);
+    assert.deepEqual(metadata.detailedRepositoryFacts, [
+      { name: 'one', status: 'failed', dependencies: [], files: [] },
+    ]);
   } finally {
     globalThis.fetch = originalFetch;
   }

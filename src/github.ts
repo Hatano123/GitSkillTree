@@ -23,6 +23,12 @@ export interface UserMetadata {
     resetAt: string | null;
   };
   scanWarnings: string[];
+  detailedRepositoryFacts: {
+    name: string;
+    status: 'read' | 'partial' | 'failed';
+    dependencies: string[];
+    files: string[];
+  }[];
   recentEvents: {
     type: string;
     repoName: string;
@@ -263,6 +269,7 @@ export async function fetchUserMetadata(username: string, _sinceTimestamp?: stri
   let inspectedRepositories = 0;
   let failedRepositories = 0;
   let rateLimited = false;
+  const detailedRepositoryFacts: UserMetadata['detailedRepositoryFacts'] = [];
   for (const repository of detailedRepositories) {
     if (rateLimit.remaining !== null && rateLimit.remaining <= RATE_LIMIT_RESERVE) {
       rateLimited = true;
@@ -271,6 +278,14 @@ export async function fetchUserMetadata(username: string, _sinceTimestamp?: stri
     const inspection = await inspectRepository(cleanUsername, repository, rateLimit);
     inspectedRepositories += 1;
     if (inspection.failed) failedRepositories += 1;
+    detailedRepositoryFacts.push({
+      name: repository.name,
+      status: inspection.failed
+        ? inspection.files.length > 0 ? 'partial' : 'failed'
+        : 'read',
+      dependencies: [...inspection.dependencies],
+      files: [...inspection.files],
+    });
     inspection.files.forEach((file) => files.add(file));
     inspection.dependencies.forEach((dependency) => dependencies.add(dependency));
     if (inspection.rateLimited) {
@@ -300,6 +315,7 @@ export async function fetchUserMetadata(username: string, _sinceTimestamp?: stri
       resetAt: rateLimit.resetAt,
     },
     scanWarnings,
+    detailedRepositoryFacts,
     recentEvents: [],
   };
 }

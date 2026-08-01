@@ -1,5 +1,5 @@
 import type { UserMetadata } from './github';
-import type { SkillCategory } from './types';
+import type { DetectionDebugInfo, DetectionEvidenceMatch, SkillCategory } from './types';
 
 export interface NodeSignature {
   nodeId: string;
@@ -116,11 +116,49 @@ export function detectNodesFromFacts(facts: DetectionFacts): string[] {
   ).map((signature) => signature.nodeId);
 }
 
+function collectMetadataMatches(signature: NodeSignature, metadata: UserMetadata): DetectionEvidenceMatch[] {
+  const matches: DetectionEvidenceMatch[] = [];
+  if (signature.always) matches.push({ type: 'always', value: '常時開放' });
+
+  for (const repository of metadata.repositories) {
+    const language = repository.language.toLowerCase();
+    const matchedLanguage = signature.languages?.find((value) => value.toLowerCase() === language);
+    if (matchedLanguage) matches.push({ type: 'language', value: matchedLanguage, repository: repository.name });
+  }
+
+  for (const repository of metadata.detailedRepositoryFacts) {
+    for (const dependency of repository.dependencies) {
+      if (signature.dependencies?.some((value) => value.toLowerCase() === dependency.toLowerCase())) {
+        matches.push({ type: 'dependency', value: dependency, repository: repository.name });
+      }
+    }
+    for (const file of repository.files) {
+      if (signature.files?.some((pattern) => matchesFile(pattern, file))) {
+        matches.push({ type: 'file', value: file, repository: repository.name });
+      }
+    }
+  }
+
+  // Keep persisted debug data compact while showing more than one repository
+  // when the same evidence appears repeatedly.
+  return matches.slice(0, 8);
+}
+
+export function detectAcquiredNodesWithDebug(metadata: UserMetadata): { nodeIds: string[]; debug: DetectionDebugInfo } {
+  const nodeEvidence = NODE_SIGNATURES
+    .map((signature) => ({ nodeId: signature.nodeId, matches: collectMetadataMatches(signature, metadata) }))
+    .filter((evidence) => evidence.matches.length > 0);
+  return {
+    nodeIds: nodeEvidence.map((evidence) => evidence.nodeId),
+    debug: {
+      listedRepositoryCount: metadata.repositories.length,
+      detailedRepositories: metadata.detailedRepositoryFacts.map(({ name, status }) => ({ name, status })),
+      nodeEvidence,
+    },
+  };
+}
+
 /** Deterministic detection only; repository names, descriptions, and AI are ignored. */
 export function detectAcquiredNodes(metadata: UserMetadata): string[] {
-  return detectNodesFromFacts({
-    languages: Object.keys(metadata.aggregatedLanguages),
-    dependencies: metadata.dependencies,
-    files: metadata.files,
-  });
+  return detectAcquiredNodesWithDebug(metadata).nodeIds;
 }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { detectAcquiredNodes, detectNodesFromFacts, NODE_SIGNATURES } from './detectNodes.ts';
+import { detectAcquiredNodes, detectAcquiredNodesWithDebug, detectNodesFromFacts, NODE_SIGNATURES } from './detectNodes.ts';
 import type { UserMetadata } from './github.ts';
 import { DETECTION_NODE_IDS } from './skillTree.ts';
 
@@ -49,9 +49,32 @@ test('repository description and name never unlock a node', () => {
     repositories: [{ name: 'next-docker-ai', description: 'Next.js Docker TensorFlow', language: '', stars: 0, updatedAt: '', defaultBranch: 'main', fork: false }],
     aggregatedLanguages: {}, dependencies: [], files: [],
     scanCoverage: { selectedRepositories: 0, inspectedRepositories: 0, failedRepositories: 0, rateLimited: false, remainingRequests: null, resetAt: null },
-    scanWarnings: [], recentEvents: [],
+    scanWarnings: [], detailedRepositoryFacts: [], recentEvents: [],
   };
   assert.deepEqual(detectAcquiredNodes(metadata), ['git']);
+});
+
+test('debug evidence identifies repositories and exact reasons for unlocked nodes', () => {
+  const metadata: UserMetadata = {
+    username: 'debug', avatarUrl: '', publicReposCount: 2,
+    repositories: [
+      { name: 'web', description: '', language: 'TypeScript', stars: 0, updatedAt: '', defaultBranch: 'main', fork: false },
+      { name: 'vision', description: '', language: 'Python', stars: 0, updatedAt: '', defaultBranch: 'main', fork: false },
+    ],
+    aggregatedLanguages: { TypeScript: 1, Python: 1 },
+    dependencies: ['react', 'opencv-python'], files: ['package.json', 'requirements.txt'],
+    scanCoverage: { selectedRepositories: 2, inspectedRepositories: 2, failedRepositories: 0, rateLimited: false, remainingRequests: 30, resetAt: null },
+    scanWarnings: [], recentEvents: [],
+    detailedRepositoryFacts: [
+      { name: 'web', status: 'read', dependencies: ['react'], files: ['package.json', 'src/App.tsx'] },
+      { name: 'vision', status: 'read', dependencies: ['opencv-python'], files: ['requirements.txt', 'main.py'] },
+    ],
+  };
+  const result = detectAcquiredNodesWithDebug(metadata);
+  assert.ok(result.debug.nodeEvidence.find((item) => item.nodeId === 'typescript')?.matches.some((match) => match.repository === 'web' && match.type === 'language'));
+  assert.ok(result.debug.nodeEvidence.find((item) => item.nodeId === 'react')?.matches.some((match) => match.repository === 'web' && match.type === 'dependency'));
+  assert.ok(result.debug.nodeEvidence.find((item) => item.nodeId === 'opencv')?.matches.some((match) => match.repository === 'vision' && match.value === 'opencv-python'));
+  assert.deepEqual(result.debug.detailedRepositories.map((item) => item.name), ['web', 'vision']);
 });
 
 test('React alone does not unlock Next.js and matching is deterministic', () => {

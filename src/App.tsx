@@ -26,7 +26,7 @@ import { ARCHETYPES, MOCK_REPOS } from './mockData';
 import { FIXED_TREE_FLOW_NODES, FIXED_TREE_FLOW_EDGES } from './skillTree';
 import { saveScan, getScanById, getLatestScanByUsername } from './firebase';
 import { fetchUserMetadata } from './github';
-import { detectAcquiredNodes } from './detectNodes';
+import { detectAcquiredNodesWithDebug } from './detectNodes';
 import { generateExplanationWithGemini } from './gemini';
 import type { AnalysisResult } from './gemini';
 import { EVALUATION_VERSION, evaluateNodes, fallbackExplanation } from './evaluation';
@@ -49,6 +49,19 @@ const edgeTypes = {
 const SCAN_CACHE_DURATION_MS = 10 * 60 * 1000;
 type AnalysisResultSource = 'fresh' | 'cache' | 'fallback' | null;
 
+const DETECTION_EVIDENCE_LABELS = {
+  always: '常時開放',
+  language: '言語',
+  dependency: '依存関係',
+  file: '専用ファイル',
+} as const;
+
+const REPOSITORY_READ_STATUS_LABELS = {
+  read: '取得済み',
+  partial: '一部取得',
+  failed: '取得失敗',
+} as const;
+
 function toAnalysisResult(scan: ScanRecord): AnalysisResult {
   const normalized = evaluateNodes(scan.acquiredNodeIds);
   return {
@@ -61,6 +74,7 @@ function toAnalysisResult(scan: ScanRecord): AnalysisResult {
     recommendedNodeIds: scan.recommendedNodeIds,
     unlockedNodeIds: scan.unlockedNodeIds,
     customLogs: scan.customLogs,
+    detectionDebug: scan.detectionDebug,
   };
 }
 
@@ -225,7 +239,8 @@ export default function App() {
 
       // Step 2: Deterministic node detection (instant)
       t0 = performance.now();
-      const detectedNodes = detectAcquiredNodes(metadata);
+      const detection = detectAcquiredNodesWithDebug(metadata);
+      const detectedNodes = detection.nodeIds;
       setTimingLogs(prev => [...prev, { label: LOADING_STEP_LABELS[2], ms: Math.round(performance.now() - t0) }]);
       setLoadingStep(3);
 
@@ -244,7 +259,7 @@ export default function App() {
       setTimingLogs(prev => [...prev, { label: LOADING_STEP_LABELS[3], ms: Math.round(performance.now() - t0) }]);
       setLoadingStep(4);
 
-      setCustomAnalysisResult({ ...evaluation, customLogs });
+      setCustomAnalysisResult({ ...evaluation, customLogs, detectionDebug: detection.debug });
       setAnalysisResultSource('fresh');
     } catch (err: any) {
       console.error(err);
@@ -359,7 +374,7 @@ export default function App() {
       const unlockedNodeIds = customAnalysisResult.unlockedNodeIds;
       const customLogs = customAnalysisResult.customLogs;
 
-      saveScan({
+      const scanRecord: Omit<ScanRecord, 'id'> = {
         username: githubUsername,
         avatarUrl: avatarUrl,
         timestamp: new Date().toISOString(),
@@ -373,7 +388,12 @@ export default function App() {
         unlockedNodeIds,
         previousScanId: previousScan ? (previousScan.id || null) : null,
         customLogs
-      }).then((docId) => {
+      };
+      if (customAnalysisResult.detectionDebug) {
+        scanRecord.detectionDebug = customAnalysisResult.detectionDebug;
+      }
+
+      saveScan(scanRecord).then((docId) => {
         setSavedScanId(docId);
       });
     }, 800);
@@ -913,6 +933,57 @@ export default function App() {
                     <p className="text-slate-300 leading-relaxed">
                       各分野の検出技術数を集計し、最多分野を100として相対表示します。生成AIは検出・分類・計算に関与しません。
                     </p>
+                    {customAnalysisResult?.detectionDebug ? (
+                      <div className="space-y-3 rounded-lg border border-slate-700 bg-slate-900/70 p-3">
+                        <div>
+                          <div className="flex items-center justify-between gap-3 font-semibold text-slate-100">
+                            <span>詳細を確認したリポジトリ</span>
+                            <span className="shrink-0 font-mono text-cyan-300">
+                              一覧 {customAnalysisResult.detectionDebug.listedRepositoryCount}件 / 詳細 {customAnalysisResult.detectionDebug.detailedRepositories.length}件
+                            </span>
+                          </div>
+                          {customAnalysisResult.detectionDebug.detailedRepositories.length > 0 ? (
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {customAnalysisResult.detectionDebug.detailedRepositories.map((repository) => (
+                                <span key={repository.name} className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-slate-300">
+                                  {repository.name}
+                                  <span className="ml-1 text-[10px] text-slate-500">{REPOSITORY_READ_STATUS_LABELS[repository.status]}</span>
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="mt-2 text-slate-500">詳細確認できたリポジトリはありません。</p>
+                          )}
+                        </div>
+
+                        <div>
+                          <p className="font-semibold text-slate-100">見つかったノードと検出根拠</p>
+                          <div className="mt-2 max-h-64 space-y-2 overflow-y-auto pr-1">
+                            {customAnalysisResult.detectionDebug.nodeEvidence.map((nodeEvidence) => {
+                              const flowNode = FIXED_TREE_FLOW_NODES.find((node) => node.id === nodeEvidence.nodeId);
+                              const nodeLabel = typeof flowNode?.data?.label === 'string' ? flowNode.data.label : nodeEvidence.nodeId;
+                              return (
+                                <div key={nodeEvidence.nodeId} className="rounded-md border border-slate-800 bg-slate-950/80 p-2">
+                                  <p className="font-semibold text-cyan-200">{nodeLabel}</p>
+                                  <ul className="mt-1 space-y-1 text-slate-400">
+                                    {nodeEvidence.matches.map((match, index) => (
+                                      <li key={`${match.type}-${match.value}-${match.repository ?? ''}-${index}`}>
+                                        {match.repository && <span className="text-slate-300">{match.repository} · </span>}
+                                        {DETECTION_EVIDENCE_LABELS[match.type]}: {match.value}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="rounded-lg border border-slate-800 bg-slate-900/50 p-2.5 text-slate-500">
+                        このスキャンにはリポジトリ別の検出根拠が保存されていません。
+                      </p>
+                    )}
                     {radarData.map((category) => (
                       <div key={category.subject} className="rounded-lg border border-slate-800 bg-slate-900/50 p-2.5">
                         <div className="flex items-center justify-between font-semibold text-slate-100">
