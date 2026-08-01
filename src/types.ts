@@ -36,8 +36,9 @@ export interface RadarDataPoint {
   subject: string;
   A: number;
   fullMark: number;
-  // We can include a previous score B dynamically during rendering
-  B?: number; 
+  detectedCount?: number;
+  B?: number;
+  previousDetectedCount?: number;
 }
 
 export interface ArchetypeInfo {
@@ -58,6 +59,9 @@ export interface ScanRecord {
   timestamp: string;
   archetypeKey: string;
   scores: RadarDataPoint[];
+  detectedCounts?: Record<SkillCategory, number>;
+  evaluationVersion?: string;
+  dataStatus?: 'insufficient' | 'limited' | 'available';
   acquiredNodeIds: string[];
   recommendedNodeIds: string[];
   unlockedNodeIds: string[];

@@ -23,7 +23,7 @@ export async function generateExplanationWithGemini(metadata: UserMetadata, eval
 
   const genAI = new GoogleGenerativeAI(API_KEY);
   const model = genAI.getGenerativeModel({ model: 'gemini-3.1-flash-lite', generationConfig: { responseMimeType: 'application/json' } });
-  const prompt = `あなたは開発学習の応援コメントを書くアシスタントです。以下の評価結果はすでに確定済みです。スコア、ノード、実績、クエスト達成を判定・変更・提案しないでください。日本語の自然な励ましを3件だけ JSON で返してください。\n\nユーザー: ${metadata.username}\n確定済みノード: ${evaluation.acquiredNodeIds.join(', ')}\n今回新規ノード: ${evaluation.unlockedNodeIds.join(', ') || 'なし'}\n確定済みスコア: ${evaluation.scores.map((score) => `${score.subject}:${score.A}`).join(', ')}\n\n{"customLogs":["...","...","..."]}`;
+  const prompt = `あなたは確定済みのGitHub技術検出結果を説明するアシスタントです。ノード開放、カテゴリ分類、相対値の計算、検出結果の追加・削除・変更をしないでください。能力、習熟度、適性を評価せず、日本語の自然な説明を3件だけ JSON で返してください。\n\nユーザー: ${metadata.username}\n確定済みノード: ${evaluation.acquiredNodeIds.join(', ') || 'なし'}\n今回新規ノード: ${evaluation.unlockedNodeIds.join(', ') || 'なし'}\n分野別の検出技術数と相対値: ${evaluation.scores.map((item) => `${item.subject}: ${item.detectedCount}件 (${item.A})`).join(', ')}\n\n{"customLogs":["...","...","..."]}`;
 
   const result = await model.generateContent(prompt);
   try {
