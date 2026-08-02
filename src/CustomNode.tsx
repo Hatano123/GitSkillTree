@@ -176,7 +176,7 @@ const CustomNode: React.FC<NodeProps> = ({ id, data }) => {
           )}
 
           {hasExp && nodeData.state !== 'unlocked' && (
-            <span className="absolute -bottom-1.5 rounded-full border border-cyan-400/40 bg-slate-950 px-1.5 py-0.5 font-mono text-[8px] font-black text-cyan-200 shadow-lg">
+            <span className="absolute -bottom-1.5 rounded-full border border-cyan-400/40 bg-slate-950 px-1.5 py-0.5 font-mono text-[11px] font-black leading-none text-cyan-200 shadow-lg">
               LV.{nodeData.level}
             </span>
           )}
@@ -185,7 +185,7 @@ const CustomNode: React.FC<NodeProps> = ({ id, data }) => {
 
       {/* Label tag under the circle */}
       <div className="mt-2 text-center">
-        <span className="text-[10px] font-black text-white tracking-wider whitespace-nowrap bg-slate-950/90 px-2 py-0.5 rounded border border-slate-900/80 shadow-md">
+        <span className="text-[13px] font-black text-white tracking-wider whitespace-nowrap bg-slate-950/90 px-2 py-0.5 rounded border border-slate-900/80 shadow-md">
           {nodeData.label}
         </span>
       </div>

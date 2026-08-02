@@ -1,4 +1,4 @@
-import { RefreshCw, ShieldCheck, Target, Zap } from 'lucide-react';
+import { RefreshCw, Target, Zap } from 'lucide-react';
 import type { GrowthSnapshot } from './types';
 
 type GrowthSummaryCardProps = {
@@ -25,7 +25,7 @@ export default function GrowthSummaryCard({ growth, questLabel, onRescan }: Grow
           <p className={`font-mono text-sm font-black ${hasGain ? 'text-emerald-300' : 'text-slate-400'}`}>
             {hasGain ? `+${growth.gainedExp} EXP` : '±0 EXP'}
           </p>
-          <p className="mt-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-500">Scan #{growth.scanCount}</p>
+          <p className="mt-0.5 text-xs font-bold uppercase tracking-wider text-slate-500">Scan #{growth.scanCount}</p>
         </div>
       </div>
 
@@ -35,13 +35,7 @@ export default function GrowthSummaryCard({ growth, questLabel, onRescan }: Grow
           <div className="min-w-0">
             <p className="text-[10px] font-black uppercase tracking-wider text-amber-300">Next Quest</p>
             <p className="mt-1 text-sm font-bold text-white">{questLabel ? `${questLabel} を使うリポジトリを増やす` : '新しい技術を使うリポジトリを増やす'}</p>
-            <p className="mt-1 text-[11px] leading-5 text-slate-500">その技術を使う公開リポジトリが1件見つかるごとに、そのノードへ10 EXP入ります。</p>
           </div>
-        </div>
-
-        <div className="flex items-center gap-2 text-[10px] leading-4 text-slate-500">
-          <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-cyan-500" />
-          同じ証拠で再スキャンしてもEXPは増えません。能力評価ではなく、確認できた活動の蓄積です。
         </div>
 
         <button
