@@ -28,7 +28,7 @@ test('detail selection keeps the latest three and adds language diversity', () =
   assert.ok(selected.some((item) => item.name === 'older-cpp'));
 });
 
-test('scan stays within its request budget and inspects ten non-forks', async () => {
+test('scan stays within its request budget, excludes forks, and reads multiple manifests', async () => {
   const originalFetch = globalThis.fetch;
   const urls: string[] = [];
   globalThis.fetch = (async (input: string | URL | Request) => {
@@ -51,19 +51,21 @@ test('scan stays within its request budget and inspects ten non-forks', async ()
     if (url.includes('/recent-b/git/trees/')) return Response.json({ tree: [{ path: 'package.json', type: 'blob' }, { path: 'requirements.txt', type: 'blob' }, { path: 'pyproject.toml', type: 'blob' }] });
     if (url.includes('/git/trees/')) return Response.json({ tree: [{ path: 'package.json', type: 'blob' }, { path: 'Dockerfile', type: 'blob' }] });
     if (url.includes('/recent-b/contents/requirements.txt')) return Response.json({ content: btoa('opencv-python-headless==4.10') });
+    if (url.includes('/recent-b/contents/pyproject.toml')) return Response.json({ content: btoa('[project]\ndependencies=["fastapi"]') });
     if (url.includes('/contents/package.json')) return Response.json({ content: btoa('{"dependencies":{"react":"1"}}') });
     return new Response(null, { status: 404 });
   }) as typeof fetch;
   try {
     const metadata = await fetchUserMetadata('example');
-    assert.equal(urls.length, MAX_GITHUB_REQUESTS);
+    assert.ok(urls.length <= MAX_GITHUB_REQUESTS);
     assert.ok(!urls.some((url) => url.includes('/repos/example/fork-newest/git/trees/')));
-    assert.equal(urls.filter((url) => url.includes('/contents/')).length, DETAILED_REPOSITORY_LIMIT);
-    assert.equal(metadata.repositories.length, 11);
-    assert.equal(metadata.aggregatedLanguages.Rust, 2);
+    assert.equal(urls.filter((url) => url.includes('/git/trees/')).length, DETAILED_REPOSITORY_LIMIT);
+    assert.equal(metadata.repositories.length, 10);
+    assert.equal(metadata.aggregatedLanguages.Rust, 1);
     assert.ok(urls.some((url) => url.includes('/recent-b/contents/requirements.txt')));
-    assert.ok(!urls.some((url) => url.includes('/recent-b/contents/package.json')));
+    assert.ok(urls.some((url) => url.includes('/recent-b/contents/pyproject.toml')));
     assert.ok(metadata.dependencies.includes('opencv-python-headless'));
+    assert.ok(metadata.dependencies.includes('fastapi'));
     assert.equal(metadata.detailedRepositoryFacts.length, DETAILED_REPOSITORY_LIMIT);
     assert.ok(metadata.detailedRepositoryFacts.find((repository) => repository.name === 'recent-b')?.dependencies.includes('opencv-python-headless'));
     assert.ok(metadata.detailedRepositoryFacts.every((repository) => repository.status === 'read'));
@@ -153,6 +155,41 @@ test('secondary rate limit with Retry-After also stops detail requests', async (
     assert.equal(requestCount, 3);
     assert.equal(metadata.scanCoverage.rateLimited, true);
     assert.ok(metadata.scanCoverage.resetAt);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('a repeat scan preserves public activity after the previous scan time', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url.endsWith('/users/activity')) return Response.json({ login: 'activity', public_repos: 0 });
+    if (url.includes('/users/activity/repos?')) return Response.json([]);
+    if (url.includes('/users/activity/events?')) return Response.json([
+      {
+        type: 'PushEvent',
+        repo: { name: 'activity/project' },
+        created_at: '2026-08-02T01:00:00Z',
+        payload: { commits: [{ message: 'feat: add quest progress' }, { message: 'Merge branch main' }] },
+      },
+      {
+        type: 'IssuesEvent',
+        repo: { name: 'activity/project' },
+        created_at: '2026-07-31T01:00:00Z',
+        payload: {},
+      },
+    ]);
+    return new Response(null, { status: 404 });
+  }) as typeof fetch;
+  try {
+    const metadata = await fetchUserMetadata('activity', '2026-08-01T00:00:00Z');
+    assert.deepEqual(metadata.recentEvents, [{
+      type: 'PushEvent',
+      repoName: 'activity/project',
+      createdAt: '2026-08-02T01:00:00Z',
+      commits: ['feat: add quest progress'],
+    }]);
   } finally {
     globalThis.fetch = originalFetch;
   }

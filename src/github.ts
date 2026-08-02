@@ -42,8 +42,9 @@ interface GitHubTreeItem {
   type?: string;
 }
 
-export const DETAILED_REPOSITORY_LIMIT = 10;
-export const MAX_GITHUB_REQUESTS = 2 + DETAILED_REPOSITORY_LIMIT * 2;
+export const DETAILED_REPOSITORY_LIMIT = 8;
+export const MANIFEST_REQUEST_LIMIT = 11;
+export const MAX_GITHUB_REQUESTS = 3 + DETAILED_REPOSITORY_LIMIT + MANIFEST_REQUEST_LIMIT;
 const RATE_LIMIT_RESERVE = 4;
 
 const DEFAULT_MANIFEST_NAMES = ['package.json', 'requirements.txt', 'pyproject.toml'] as const;
@@ -181,44 +182,70 @@ export function selectDetailedRepositories(repositories: UserMetadata['repositor
   return selected;
 }
 
-async function inspectRepository(username: string, repository: UserMetadata['repositories'][number], rateLimit: RateLimitState) {
+type RepositoryInspection = {
+  repository: UserMetadata['repositories'][number];
+  files: string[];
+  dependencies: string[];
+  manifestPaths: string[];
+  attemptedManifestCount: number;
+  status: 'read' | 'partial' | 'failed';
+};
+
+function selectManifestPaths(files: readonly string[], language: string): string[] {
+  const manifestNames = language.toLowerCase() === 'python'
+    ? PYTHON_MANIFEST_NAMES
+    : language.toLowerCase() === 'c++' || language.toLowerCase() === 'c'
+      ? CPLUSPLUS_MANIFEST_NAMES
+      : DEFAULT_MANIFEST_NAMES;
+  const paths: string[] = [];
+  for (const manifestName of manifestNames) {
+    const matches = files
+      .filter((path) => path.split('/').at(-1)?.toLowerCase() === manifestName.toLowerCase())
+      .sort((left, right) => left.split('/').length - right.split('/').length || left.localeCompare(right));
+    paths.push(...matches);
+  }
+  return [...new Set(paths)];
+}
+
+async function inspectRepositoryTree(username: string, repository: UserMetadata['repositories'][number], rateLimit: RateLimitState): Promise<RepositoryInspection> {
   const files: string[] = [];
-  const dependencies: string[] = [];
   try {
     const treeResponse = await githubFetch(`https://api.github.com/repos/${encodeURIComponent(username)}/${encodeURIComponent(repository.name)}/git/trees/${encodeURIComponent(repository.defaultBranch)}?recursive=1`, rateLimit);
-    if (!treeResponse.ok) return { files, dependencies, failed: true, rateLimited: rateLimit.exhausted };
+    if (!treeResponse.ok) return { repository, files, dependencies: [], manifestPaths: [], attemptedManifestCount: 0, status: 'failed' };
     const treeData = await treeResponse.json() as { tree?: GitHubTreeItem[] };
     files.push(...(treeData.tree ?? []).filter((item) => item.type === 'blob' && item.path).map((item) => item.path!));
-
-    // At most one dependency file per repository. Prefer the manifest with the
-    // broadest MVP support, based solely on the file list already fetched.
-    const language = repository.language.toLowerCase();
-    const manifestNames = language === 'python'
-      ? PYTHON_MANIFEST_NAMES
-      : language === 'c++' || language === 'c'
-        ? CPLUSPLUS_MANIFEST_NAMES
-        : DEFAULT_MANIFEST_NAMES;
-    const manifest = manifestNames
-      .map((name) => files.find((path) => path.toLowerCase() === name || path.toLowerCase().endsWith(`/${name}`)))
-      .find(Boolean);
-    if (!manifest) return { files, dependencies, failed: false, rateLimited: false };
-
-    const manifestResponse = await githubFetch(`https://api.github.com/repos/${encodeURIComponent(username)}/${encodeURIComponent(repository.name)}/contents/${manifest.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(repository.defaultBranch)}`, rateLimit);
-    if (!manifestResponse.ok) return { files, dependencies, failed: true, rateLimited: rateLimit.exhausted };
-    const manifestData = await manifestResponse.json() as { content?: string };
-    if (manifestData.content) dependencies.push(...parseManifestDependencies(manifest, decodeBase64Utf8(manifestData.content)));
   } catch (error) {
     console.warn(`Failed to inspect ${repository.name}; continuing scan.`, error);
-    return { files, dependencies, failed: true, rateLimited: false };
+    return { repository, files, dependencies: [], manifestPaths: [], attemptedManifestCount: 0, status: 'failed' };
   }
-  return { files, dependencies, failed: false, rateLimited: false };
+  return {
+    repository,
+    files,
+    dependencies: [],
+    manifestPaths: selectManifestPaths(files, repository.language),
+    attemptedManifestCount: 0,
+    status: 'read',
+  };
+}
+
+async function readRepositoryManifest(username: string, inspection: RepositoryInspection, manifest: string, rateLimit: RateLimitState): Promise<boolean> {
+  try {
+    const response = await githubFetch(`https://api.github.com/repos/${encodeURIComponent(username)}/${encodeURIComponent(inspection.repository.name)}/contents/${manifest.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(inspection.repository.defaultBranch)}`, rateLimit);
+    if (!response.ok) return false;
+    const data = await response.json() as { content?: string };
+    if (data.content) inspection.dependencies.push(...parseManifestDependencies(manifest, decodeBase64Utf8(data.content)));
+    return true;
+  } catch (error) {
+    console.warn(`Failed to read ${inspection.repository.name}/${manifest}; continuing scan.`, error);
+    return false;
+  }
 }
 
 /**
- * Uses 2 list/profile requests plus up to 10 trees and 10 manifests: at most 22
- * GitHub requests per scan. Individual repository failures remain partial.
+ * Uses profile/list/events requests plus up to 8 trees and 11 manifests: at
+ * most 22 GitHub requests per scan. Individual failures remain partial.
  */
-export async function fetchUserMetadata(username: string, _sinceTimestamp?: string): Promise<UserMetadata> {
+export async function fetchUserMetadata(username: string, sinceTimestamp?: string): Promise<UserMetadata> {
   const cleanUsername = username.trim();
   if (!cleanUsername) throw new Error('GitHubユーザー名を入力してください。');
   const rateLimit: RateLimitState = { remaining: null, resetAt: null, exhausted: false };
@@ -248,6 +275,7 @@ export async function fetchUserMetadata(username: string, _sinceTimestamp?: stri
   }
   const repositoriesData = await repositoriesResponse.json();
   const repositories: UserMetadata['repositories'] = repositoriesData
+    .filter((repository: any) => !repository.fork)
     .map((repository: any) => ({
       name: repository.name,
       description: repository.description || '',
@@ -264,33 +292,84 @@ export async function fetchUserMetadata(username: string, _sinceTimestamp?: stri
   }
 
   const detailedRepositories = selectDetailedRepositories(repositories);
-  const files = new Set<string>();
-  const dependencies = new Set<string>();
-  let inspectedRepositories = 0;
-  let failedRepositories = 0;
+  const inspections: RepositoryInspection[] = [];
   let rateLimited = false;
-  const detailedRepositoryFacts: UserMetadata['detailedRepositoryFacts'] = [];
   for (const repository of detailedRepositories) {
     if (rateLimit.remaining !== null && rateLimit.remaining <= RATE_LIMIT_RESERVE) {
       rateLimited = true;
       break;
     }
-    const inspection = await inspectRepository(cleanUsername, repository, rateLimit);
-    inspectedRepositories += 1;
-    if (inspection.failed) failedRepositories += 1;
-    detailedRepositoryFacts.push({
-      name: repository.name,
-      status: inspection.failed
-        ? inspection.files.length > 0 ? 'partial' : 'failed'
-        : 'read',
-      dependencies: [...inspection.dependencies],
-      files: [...inspection.files],
-    });
-    inspection.files.forEach((file) => files.add(file));
-    inspection.dependencies.forEach((dependency) => dependencies.add(dependency));
-    if (inspection.rateLimited) {
+    const inspection = await inspectRepositoryTree(cleanUsername, repository, rateLimit);
+    inspections.push(inspection);
+    if (rateLimit.exhausted) {
       rateLimited = true;
       break;
+    }
+  }
+
+  let manifestRequests = 0;
+  let round = 0;
+  manifestLoop: while (manifestRequests < MANIFEST_REQUEST_LIMIT) {
+    let requestedInRound = false;
+    for (const inspection of inspections) {
+      const manifest = inspection.manifestPaths[round];
+      if (!manifest || inspection.status === 'failed') continue;
+      if (manifestRequests >= MANIFEST_REQUEST_LIMIT) break manifestLoop;
+      if (rateLimit.remaining !== null && rateLimit.remaining <= RATE_LIMIT_RESERVE) {
+        rateLimited = true;
+        break manifestLoop;
+      }
+      requestedInRound = true;
+      manifestRequests += 1;
+      inspection.attemptedManifestCount += 1;
+      if (!await readRepositoryManifest(cleanUsername, inspection, manifest, rateLimit)) inspection.status = 'partial';
+      if (rateLimit.exhausted) {
+        rateLimited = true;
+        break manifestLoop;
+      }
+    }
+    if (!requestedInRound) break;
+    round += 1;
+  }
+
+  for (const inspection of inspections) {
+    if (inspection.status === 'read' && inspection.attemptedManifestCount < inspection.manifestPaths.length) {
+      inspection.status = 'partial';
+    }
+  }
+
+  const files = new Set(inspections.flatMap((inspection) => inspection.files));
+  const dependencies = new Set(inspections.flatMap((inspection) => inspection.dependencies));
+  const detailedRepositoryFacts: UserMetadata['detailedRepositoryFacts'] = inspections.map((inspection) => ({
+    name: inspection.repository.name,
+    status: inspection.status,
+    dependencies: [...new Set(inspection.dependencies)].sort(),
+    files: [...inspection.files],
+  }));
+  const inspectedRepositories = inspections.length;
+  const failedRepositories = inspections.filter((inspection) => inspection.status !== 'read').length;
+
+  let recentEvents: UserMetadata['recentEvents'] = [];
+  if (sinceTimestamp && !rateLimited && (rateLimit.remaining === null || rateLimit.remaining > RATE_LIMIT_RESERVE)) {
+    try {
+      const eventsResponse = await githubFetch(`https://api.github.com/users/${encodeURIComponent(cleanUsername)}/events?per_page=30`, rateLimit);
+      if (eventsResponse.ok) {
+        const eventsData = await eventsResponse.json() as any[];
+        const baseline = new Date(sinceTimestamp).getTime();
+        recentEvents = eventsData
+          .map((event) => ({
+            type: event.type || '',
+            repoName: event.repo?.name || '',
+            createdAt: event.created_at || '',
+            commits: (event.payload?.commits ?? [])
+              .map((commit: any) => String(commit.message || ''))
+              .filter((message: string) => message && !message.includes('Merge pull request') && !message.includes('Merge branch')),
+          }))
+          .filter((event) => new Date(event.createdAt).getTime() > baseline);
+      }
+      if (rateLimit.exhausted) rateLimited = true;
+    } catch {
+      // Events are optional context for future progress/EXP features.
     }
   }
 
@@ -316,6 +395,6 @@ export async function fetchUserMetadata(username: string, _sinceTimestamp?: stri
     },
     scanWarnings,
     detailedRepositoryFacts,
-    recentEvents: [],
+    recentEvents,
   };
 }

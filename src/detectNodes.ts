@@ -37,7 +37,7 @@ export const NODE_SIGNATURES: readonly NodeSignature[] = [
 
   { nodeId: 'python', category: 'backend', languages: ['Python'], files: ['*.py'] },
   { nodeId: 'nodejs', category: 'backend', dependencies: ['express', 'koa', 'fastify', 'hapi', '@nestjs/core'] },
-  { nodeId: 'java', category: 'backend', languages: ['Java', 'Kotlin'], files: ['*.java', '*.kt', '*.kts'] },
+  { nodeId: 'java', category: 'backend', languages: ['Java'], files: ['*.java'] },
   { nodeId: 'fastapi', category: 'backend', dependencies: ['fastapi'] },
   { nodeId: 'express', category: 'backend', dependencies: ['express'] },
   { nodeId: 'django', category: 'backend', dependencies: ['django'] },
@@ -71,7 +71,7 @@ export const NODE_SIGNATURES: readonly NodeSignature[] = [
   { nodeId: 'yolo', category: 'ai', dependencies: ['ultralytics'] },
   { nodeId: 'hugging_face', category: 'ai', dependencies: ['transformers', 'huggingface-hub', '@huggingface/inference'] },
   { nodeId: 'computer_vision', category: 'ai' },
-  { nodeId: 'openai', category: 'ai', dependencies: ['openai', '@google/generative-ai', 'anthropic', '@anthropic-ai/sdk'] },
+  { nodeId: 'openai', category: 'ai', dependencies: ['openai', '@langchain/openai'] },
   { nodeId: 'langchain', category: 'ai', dependencies: ['langchain', '@langchain/core', '@langchain/openai'] },
 
   { nodeId: 'http', category: 'network', dependencies: ['axios', 'got', 'undici', 'node-fetch'] },

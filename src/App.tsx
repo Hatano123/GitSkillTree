@@ -246,7 +246,12 @@ export default function App() {
 
       // Step 3: evaluate deterministically, then ask Gemini for wording only.
       t0 = performance.now();
-      const evaluation = evaluateNodes(detectedNodes, prevScanRecord);
+      // A changed detector/evaluation version starts a new baseline instead of
+      // presenting migration differences as newly acquired skills.
+      const comparablePreviousScan = prevScanRecord?.evaluationVersion === EVALUATION_VERSION
+        ? prevScanRecord
+        : null;
+      const evaluation = evaluateNodes(detectedNodes, comparablePreviousScan);
       let customLogs = fallbackExplanation(metadata.username, evaluation.unlockedNodeIds);
       try {
         customLogs = await generateExplanationWithGemini(metadata, evaluation);

@@ -106,6 +106,28 @@ export const NODE_DETECTION_CASES: readonly NodeDetectionCase[] = [
     forbidden: ['aws', 'gcp'],
   },
   {
+    id: 'gemini-is-not-openai',
+    reason: 'A Gemini SDK dependency is direct evidence for Gemini, not OpenAI.',
+    facts: {
+      languages: ['TypeScript'],
+      dependencies: ['@google/generative-ai'],
+      files: ['package.json', 'src/gemini.ts'],
+    },
+    expected: ['git', 'typescript'],
+    forbidden: ['openai'],
+  },
+  {
+    id: 'kotlin-is-not-java',
+    reason: 'Kotlin source is not exact evidence that Java was used.',
+    facts: {
+      languages: ['Kotlin'],
+      dependencies: [],
+      files: ['app/src/main/kotlin/Main.kt'],
+    },
+    expected: ['git'],
+    forbidden: ['java'],
+  },
+  {
     id: 'git-empty-profile',
     reason: 'Git is the only unconditional node.',
     facts: { languages: [], dependencies: [], files: [] },
