@@ -1,13 +1,12 @@
 import { CheckCircle2, Lightbulb, LockKeyhole, Search, Sparkles, X } from 'lucide-react';
 import { FIXED_TREE_FLOW_NODES } from './skillTree';
 import { getSkillNodeDetail } from './skillNodeDetails';
-import type { SkillNodeData, SkillNodeStatus } from './types';
-import type { DetectionEvidence } from './evidenceDetectionRules';
+import type { DetectionEvidenceMatch, SkillNodeData, SkillNodeStatus } from './types';
 
 type SkillNodeDetailPanelProps = {
   nodeId: string;
   nodeData: SkillNodeData;
-  evidence: DetectionEvidence[];
+  evidence: DetectionEvidenceMatch[];
   onClose: () => void;
 };
 
@@ -117,14 +116,16 @@ export default function SkillNodeDetailPanel({
                     今回の検出証拠
                   </h3>
                   <ul className="space-y-3">
-                    {evidence.map((item) => (
+                    {evidence.map((item, index) => (
                       <li
-                        key={`${item.repository}:${item.path}:${item.reason}`}
+                        key={`${item.type}:${item.repository ?? ''}:${item.value}:${index}`}
                         className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3.5"
                       >
-                        <p className="text-base font-bold text-emerald-200">{item.reason}</p>
+                        <p className="text-base font-bold text-emerald-200">
+                          {item.type === 'always' ? '常時開放' : item.type === 'language' ? '言語を確認' : item.type === 'dependency' ? '依存関係を確認' : '専用ファイルを確認'}
+                        </p>
                         <p className="mt-1 break-all font-mono text-sm leading-6 text-slate-400">
-                          {item.repository} / {item.path}
+                          {item.repository ? `${item.repository} / ` : ''}{item.value}
                         </p>
                       </li>
                     ))}

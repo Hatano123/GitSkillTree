@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "test": "node --test --experimental-strip-types src/evaluation.test.ts",
+    "test": "node --test --experimental-strip-types src/*.test.ts",
+    "harness:test": "node --test --experimental-strip-types harness/*.test.ts",
+    "harness:scan": "node --experimental-strip-types scripts/scan-public-repositories.ts",
+    "harness": "npm run test && npm run harness:test && npm run lint && npm run build",
     "lint": "oxlint",
     "preview": "vite preview"
   },

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { SKILL_NODE_DETAILS, getSkillNodeDetail } from './skillNodeDetails.ts';
-import { EVIDENCE_DETECTION_RULES } from './evidenceDetectionRules.ts';
+import { NODE_SIGNATURES } from './detectNodes.ts';
+import { SKILL_NODE_DETAILS, getDetectionDisplayConditions, getSkillNodeDetail } from './skillNodeDetails.ts';
 
 test('MVP exposes details for exactly five skill nodes', () => {
   assert.deepEqual(
@@ -19,7 +19,7 @@ test('each MVP detail has three project ideas and related nodes', () => {
   }
 });
 
-test('detail conditions come from the executable detection rules', () => {
+test('detail conditions come from the common node signatures', () => {
   const mapping = {
     'frontend-react': 'react',
     'backend-fastapi': 'fastapi',
@@ -29,9 +29,10 @@ test('detail conditions come from the executable detection rules', () => {
   } as const;
 
   for (const [nodeId, detectionNodeId] of Object.entries(mapping)) {
-    assert.equal(
+    assert.deepEqual(
       SKILL_NODE_DETAILS[nodeId].detectionConditions,
-      EVIDENCE_DETECTION_RULES[detectionNodeId].displayConditions,
+      getDetectionDisplayConditions(detectionNodeId),
     );
+    assert.ok(NODE_SIGNATURES.some((signature) => signature.nodeId === detectionNodeId));
   }
 });

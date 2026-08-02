@@ -26,10 +26,10 @@ import { ARCHETYPES, MOCK_REPOS } from './mockData';
 import { FIXED_TREE_FLOW_NODES, FIXED_TREE_FLOW_EDGES } from './skillTree';
 import { saveScan, getScanById, getLatestScanByUsername } from './firebase';
 import { fetchUserMetadata } from './github';
-import { detectAcquiredNodesWithEvidence } from './detectNodes';
+import { detectAcquiredNodesWithDebug } from './detectNodes';
 import { generateExplanationWithGemini } from './gemini';
 import type { AnalysisResult } from './gemini';
-import { evaluateNodes, fallbackExplanation, getScoreBreakdown } from './evaluation';
+import { EVALUATION_VERSION, evaluateNodes, fallbackExplanation } from './evaluation';
 import type { ScanRecord, SkillNodeData } from './types';
 
 const GithubIcon = () => (
@@ -49,15 +49,32 @@ const edgeTypes = {
 const SCAN_CACHE_DURATION_MS = 10 * 60 * 1000;
 type AnalysisResultSource = 'fresh' | 'cache' | 'fallback' | null;
 
+const DETECTION_EVIDENCE_LABELS = {
+  always: '常時開放',
+  language: '言語',
+  dependency: '依存関係',
+  file: '専用ファイル',
+} as const;
+
+const REPOSITORY_READ_STATUS_LABELS = {
+  read: '取得済み',
+  partial: '一部取得',
+  failed: '取得失敗',
+} as const;
+
 function toAnalysisResult(scan: ScanRecord): AnalysisResult {
+  const normalized = evaluateNodes(scan.acquiredNodeIds);
   return {
-    archetypeKey: scan.archetypeKey as AnalysisResult['archetypeKey'],
-    scores: scan.scores,
+    archetypeKey: normalized.archetypeKey,
+    scores: scan.evaluationVersion === EVALUATION_VERSION ? scan.scores.map((point) => ({ ...point, detectedCount: point.detectedCount ?? 0 })) : normalized.scores,
+    detectedCounts: scan.evaluationVersion === EVALUATION_VERSION && scan.detectedCounts ? scan.detectedCounts : normalized.detectedCounts,
+    evaluationVersion: EVALUATION_VERSION,
+    dataStatus: scan.evaluationVersion === EVALUATION_VERSION && scan.dataStatus ? scan.dataStatus : normalized.dataStatus,
     acquiredNodeIds: scan.acquiredNodeIds,
     recommendedNodeIds: scan.recommendedNodeIds,
     unlockedNodeIds: scan.unlockedNodeIds,
     customLogs: scan.customLogs,
-    detectionEvidence: scan.detectionEvidence,
+    detectionDebug: scan.detectionDebug,
   };
 }
 
@@ -120,15 +137,7 @@ export default function App() {
           setGithubUsername(record.username);
           setAvatarUrl(record.avatarUrl);
           setSavedScanId(record.id || scanId);
-          setCustomAnalysisResult({
-            archetypeKey: record.archetypeKey as any,
-            scores: record.scores,
-            acquiredNodeIds: record.acquiredNodeIds,
-            recommendedNodeIds: record.recommendedNodeIds,
-            unlockedNodeIds: record.unlockedNodeIds,
-            customLogs: record.customLogs,
-            detectionEvidence: record.detectionEvidence,
-          });
+          setCustomAnalysisResult(toAnalysisResult(record));
           
           if (record.previousScanId) {
             getScanById(record.previousScanId).then((prev) => {
@@ -188,12 +197,9 @@ export default function App() {
       // loading flow so the result screen is reachable.
       setLoadingStep(4);
       window.setTimeout(() => {
+        const evaluation = evaluateNodes(mockArchetype.acquiredNodeIds);
         setCustomAnalysisResult({
-          archetypeKey: mockTemplate.type as AnalysisResult['archetypeKey'],
-          scores: mockArchetype.scores,
-          acquiredNodeIds: mockArchetype.acquiredNodeIds,
-          recommendedNodeIds: mockArchetype.recommendedNodeIds,
-          unlockedNodeIds: [],
+          ...evaluation,
           customLogs: mockArchetype.nextSteps
         });
         setAnalysisResultSource('fresh');
@@ -233,28 +239,32 @@ export default function App() {
 
       // Step 2: Deterministic node detection (instant)
       t0 = performance.now();
-      const detectionResult = detectAcquiredNodesWithEvidence(metadata);
-      const detectedNodes = detectionResult.acquiredNodeIds;
+      const detection = detectAcquiredNodesWithDebug(metadata);
+      const detectedNodes = detection.nodeIds;
       setTimingLogs(prev => [...prev, { label: LOADING_STEP_LABELS[2], ms: Math.round(performance.now() - t0) }]);
       setLoadingStep(3);
 
       // Step 3: evaluate deterministically, then ask Gemini for wording only.
       t0 = performance.now();
-      const evaluation = evaluateNodes(detectedNodes, prevScanRecord);
+      // A changed detector/evaluation version starts a new baseline instead of
+      // presenting migration differences as newly acquired skills.
+      const comparablePreviousScan = prevScanRecord?.evaluationVersion === EVALUATION_VERSION
+        ? prevScanRecord
+        : null;
+      const evaluation = evaluateNodes(detectedNodes, comparablePreviousScan);
       let customLogs = fallbackExplanation(metadata.username, evaluation.unlockedNodeIds);
       try {
         customLogs = await generateExplanationWithGemini(metadata, evaluation);
       } catch (geminiError) {
         console.warn('Gemini explanation failed; showing deterministic evaluation.', geminiError);
       }
+      if (metadata.scanWarnings.length > 0) {
+        customLogs = [...metadata.scanWarnings, ...customLogs].slice(0, 3);
+      }
       setTimingLogs(prev => [...prev, { label: LOADING_STEP_LABELS[3], ms: Math.round(performance.now() - t0) }]);
       setLoadingStep(4);
 
-      setCustomAnalysisResult({
-        ...evaluation,
-        customLogs,
-        detectionEvidence: detectionResult.evidenceByNodeId,
-      });
+      setCustomAnalysisResult({ ...evaluation, customLogs, detectionDebug: detection.debug });
       setAnalysisResultSource('fresh');
     } catch (err: any) {
       console.error(err);
@@ -281,23 +291,17 @@ export default function App() {
     setErrorMessage(null);
 
     setTimeout(() => {
+      const baselineNodeIds = ['javascript', 'typescript', 'react', 'nodejs', 'express', 'postgresql'];
+      const currentNodeIds = [...baselineNodeIds, 'nextjs', 'docker'];
+      const baselineEvaluation = evaluateNodes(baselineNodeIds);
+      const currentEvaluation = evaluateNodes(currentNodeIds, { acquiredNodeIds: baselineNodeIds });
       // Baseline Scan setup
       const baselineScan: ScanRecord = {
         id: 'baseline-demo-id',
         username: 'chibicode',
         avatarUrl: 'https://avatars.githubusercontent.com/u/74620?v=4',
         timestamp: '2026/07/07 10:00:00',
-        archetypeKey: 'fullstack',
-        scores: [
-          { subject: 'ネットワーク', A: 50, fullMark: 100 },
-          { subject: 'インフラ', A: 40, fullMark: 100 },
-          { subject: 'バックエンド', A: 70, fullMark: 100 },
-          { subject: 'フロントエンド', A: 75, fullMark: 100 },
-          { subject: 'AI', A: 20, fullMark: 100 }
-        ],
-        acquiredNodeIds: ['git', 'html_css', 'javascript', 'typescript', 'react', 'nodejs', 'express', 'postgresql'],
-        recommendedNodeIds: ['nextjs', 'docker', 'aws'],
-        unlockedNodeIds: [],
+        ...baselineEvaluation,
         previousScanId: null,
         customLogs: []
       };
@@ -308,34 +312,12 @@ export default function App() {
 
       // Updated Growth Scan setup
       setCustomAnalysisResult({
-        archetypeKey: 'fullstack',
-        scores: [
-          { subject: 'ネットワーク', A: 50, fullMark: 100 },
-          { subject: 'インフラ', A: 65, fullMark: 100 }, // +25
-          { subject: 'バックエンド', A: 75, fullMark: 100 }, // +5
-          { subject: 'フロントエンド', A: 88, fullMark: 100 }, // +13
-          { subject: 'AI', A: 20, fullMark: 100 }
-        ],
-        acquiredNodeIds: ['git', 'html_css', 'javascript', 'typescript', 'react', 'nodejs', 'express', 'postgresql', 'nextjs', 'docker'],
-        recommendedNodeIds: ['tailwind', 'aws', 'openai'],
-        unlockedNodeIds: ['nextjs', 'docker'],
+        ...currentEvaluation,
         customLogs: [
           '🎉 前回のスキャンから新たに Next.js が導入されました！フロントエンド技術が一段と強化されています。',
           '🐳 Dockerfileのコミットを検知！インフラノード Docker が新しく解放されました。',
           'コミット差分により、新たに2つの技術スタックがアンロックされました！素晴らしい成長です！'
-        ],
-        detectionEvidence: {
-          react: [{
-            repository: 'frontend-app',
-            path: 'package.json',
-            reason: 'react 依存を検出（React）',
-          }],
-          docker: [{
-            repository: 'frontend-app',
-            path: 'Dockerfile',
-            reason: 'Dockerfileを検出',
-          }],
-        },
+        ]
       });
 
       setScreen('result');
@@ -345,35 +327,13 @@ export default function App() {
         username: 'chibicode',
         avatarUrl: 'https://avatars.githubusercontent.com/u/74620?v=4',
         timestamp: new Date().toLocaleString('ja-JP'),
-        archetypeKey: 'fullstack',
-        scores: [
-          { subject: 'ネットワーク', A: 50, fullMark: 100 },
-          { subject: 'インフラ', A: 65, fullMark: 100 },
-          { subject: 'バックエンド', A: 75, fullMark: 100 },
-          { subject: 'フロントエンド', A: 88, fullMark: 100 },
-          { subject: 'AI', A: 20, fullMark: 100 }
-        ],
-        acquiredNodeIds: ['git', 'html_css', 'javascript', 'typescript', 'react', 'nodejs', 'express', 'postgresql', 'nextjs', 'docker'],
-        recommendedNodeIds: ['tailwind', 'aws', 'openai'],
-        unlockedNodeIds: ['nextjs', 'docker'],
+        ...currentEvaluation,
         previousScanId: 'baseline-demo-id',
         customLogs: [
           '🎉 前回のスキャンから新たに Next.js が導入されました！フロントエンド技術が一段と強化されています。',
           '🐳 Dockerfileのコミットを検知！インフラノード Docker が新しく解放されました。',
           'コミット差分により、新たに2つの技術スタックがアンロックされました！素晴らしい成長です！'
-        ],
-        detectionEvidence: {
-          react: [{
-            repository: 'frontend-app',
-            path: 'package.json',
-            reason: 'react 依存を検出（React）',
-          }],
-          docker: [{
-            repository: 'frontend-app',
-            path: 'Dockerfile',
-            reason: 'Dockerfileを検出',
-          }],
-        },
+        ]
       }).then((docId) => {
         setSavedScanId(docId);
       });
@@ -418,21 +378,27 @@ export default function App() {
       const recommendedNodeIds = customAnalysisResult.recommendedNodeIds;
       const unlockedNodeIds = customAnalysisResult.unlockedNodeIds;
       const customLogs = customAnalysisResult.customLogs;
-      const detectionEvidence = customAnalysisResult.detectionEvidence;
 
-      saveScan({
+      const scanRecord: Omit<ScanRecord, 'id'> = {
         username: githubUsername,
         avatarUrl: avatarUrl,
         timestamp: new Date().toISOString(),
         archetypeKey: activeArchetypeKey,
         scores: activeScores,
+        detectedCounts: customAnalysisResult.detectedCounts,
+        evaluationVersion: customAnalysisResult.evaluationVersion,
+        dataStatus: customAnalysisResult.dataStatus,
         acquiredNodeIds,
         recommendedNodeIds,
         unlockedNodeIds,
         previousScanId: previousScan ? (previousScan.id || null) : null,
-        customLogs,
-        ...(detectionEvidence ? { detectionEvidence } : {}),
-      }).then((docId) => {
+        customLogs
+      };
+      if (customAnalysisResult.detectionDebug) {
+        scanRecord.detectionDebug = customAnalysisResult.detectionDebug;
+      }
+
+      saveScan(scanRecord).then((docId) => {
         setSavedScanId(docId);
       });
     }, 800);
@@ -548,23 +514,26 @@ export default function App() {
   }, [archetypeKey, customAnalysisResult]);
 
   // Radar Data
+  const canComparePrevious = previousScan?.evaluationVersion === EVALUATION_VERSION;
   const radarData = useMemo(() => {
     return archetype.scores.map((s) => {
-      const prevVal = previousScan?.scores?.find(ps => ps.subject === s.subject)?.A;
+      const previousPoint = canComparePrevious ? previousScan?.scores?.find(ps => ps.subject === s.subject) : undefined;
       return {
         subject: s.subject,
         A: s.A,
-        B: prevVal !== undefined ? prevVal : s.A,
-        fullMark: 100
+        B: previousPoint?.A,
+        detectedCount: s.detectedCount ?? 0,
+        previousDetectedCount: previousPoint?.detectedCount ?? previousScan?.detectedCounts?.[s.subject === 'ネットワーク' ? 'network' : s.subject === 'インフラ' ? 'infra' : s.subject === 'バックエンド' ? 'backend' : s.subject === 'フロントエンド' ? 'frontend' : 'ai'],
+        fullMark: 100,
       };
     });
-  }, [archetype, previousScan]);
+  }, [archetype, canComparePrevious, previousScan]);
 
-  const scoreBreakdown = useMemo(() => {
-    const acquiredNodeIds = customAnalysisResult?.acquiredNodeIds
-      ?? (ARCHETYPES[archetypeKey] || ARCHETYPES.frontend).acquiredNodeIds;
-    return getScoreBreakdown(acquiredNodeIds);
-  }, [archetypeKey, customAnalysisResult]);
+  const dataStatusLabel = customAnalysisResult?.dataStatus === 'available'
+    ? '傾向を表示'
+    : customAnalysisResult?.dataStatus === 'limited'
+      ? '限定的な傾向'
+      : 'データ不足';
 
   const handleCopyLink = () => {
     const idToShare = savedScanId;
@@ -642,7 +611,7 @@ export default function App() {
             </h2>
             <p className="text-slate-400 text-sm md:text-base leading-relaxed">
               初回スキャンで「ベースライン」を作成。開発した後に再スキャンすると、<br />
-              <strong>前回から広がった技術経験の差分</strong>と<strong>新しく解放された技術（アンロック演出）</strong>を実感できます。
+              <strong>前回から変化した使用技術の分布</strong>と<strong>新しく確認された技術（アンロック演出）</strong>を確認できます。
             </p>
           </div>
 
@@ -819,7 +788,7 @@ export default function App() {
         <main className="flex-1 flex flex-col lg:flex-row relative z-10 min-h-[calc(100vh-73px)]">
           
           {/* Left panel: Aptitude Radar Chart */}
-          <section className="w-full lg:w-80 border-r border-slate-900 bg-slate-950/40 backdrop-blur-xl p-5 flex flex-col justify-between shrink-0 overflow-y-auto max-h-[calc(100vh-73px)]">
+          <section className="w-full lg:w-96 border-r border-slate-900 bg-slate-950/40 backdrop-blur-xl p-6 flex flex-col justify-between shrink-0 overflow-y-auto max-h-[calc(100vh-73px)]">
             
             <div className="space-y-6">
               
@@ -882,7 +851,7 @@ export default function App() {
               <div className={`p-4 rounded-xl border transition-all duration-300 ${archetype.themeColor}`}>
                 <div className="flex items-center gap-2 mb-2">
                   <Award className="w-5 h-5 shrink-0" />
-                  <h3 className="font-bold text-sm tracking-wide text-white">技術経験プロファイル</h3>
+                  <h3 className="font-bold text-sm tracking-wide text-white">技術傾向プロファイル</h3>
                 </div>
                 <h4 className="text-base font-extrabold mb-2 text-white">
                   {archetype.name}
@@ -896,10 +865,10 @@ export default function App() {
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">
-                    {previousScan ? '技術経験の変化 (比較)' : '技術経験の分布'}
+                    {canComparePrevious ? '使用技術の分布 (前回比較)' : '使用技術の分布'}
                   </h3>
                   <div className="text-[10px] font-mono flex items-center gap-2">
-                    {previousScan && (
+                    {canComparePrevious && (
                       <span className="text-slate-500 flex items-center gap-1">
                         <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
                         前回
@@ -921,6 +890,14 @@ export default function App() {
                   </div>
                 </div>
 
+                <div className="mb-3 rounded-lg border border-slate-800 bg-slate-950/60 p-3 text-xs text-slate-300">
+                  <span className="mr-2 rounded bg-cyan-500/10 px-2 py-0.5 font-semibold text-cyan-300">{dataStatusLabel}</span>
+                  GitHub上で確認できた使用技術を分野別に集計し、最も多い分野を基準に相対表示しています。能力や習熟度を評価するものではありません。
+                  {previousScan && !canComparePrevious && (
+                    <span className="mt-2 block text-amber-300">前回は異なる集計方式のため、直接比較していません。</span>
+                  )}
+                </div>
+
                 <div className="h-56 bg-slate-950/60 border border-slate-900 rounded-xl flex items-center justify-center p-2">
                   <ResponsiveContainer width="100%" height="100%">
                     <RadarChart cx="50%" cy="50%" outerRadius="80%" data={radarData}>
@@ -931,7 +908,7 @@ export default function App() {
                       />
                       <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fill: '#475569', fontSize: 8 }} />
                       
-                      {previousScan && (
+                      {canComparePrevious && (
                         <Radar
                           name="Previous"
                           dataKey="B"
@@ -959,24 +936,68 @@ export default function App() {
                 {isScoreBreakdownOpen && (
                   <div className="mt-3 space-y-2 rounded-xl border border-cyan-500/20 bg-slate-950/80 p-3 text-xs">
                     <p className="text-slate-300 leading-relaxed">
-                      グラフは点灯ノードの固定配点を合計して算出します。Gemini の出力はこの値に影響しません。
+                      各分野の検出技術数を集計し、最多分野を100として相対表示します。生成AIは検出・分類・計算に関与しません。
                     </p>
-                    {scoreBreakdown.map((category) => (
+                    {customAnalysisResult?.detectionDebug ? (
+                      <div className="space-y-3 rounded-lg border border-slate-700 bg-slate-900/70 p-3">
+                        <div>
+                          <div className="flex items-center justify-between gap-3 font-semibold text-slate-100">
+                            <span>詳細を確認したリポジトリ</span>
+                            <span className="shrink-0 font-mono text-cyan-300">
+                              一覧 {customAnalysisResult.detectionDebug.listedRepositoryCount}件 / 詳細 {customAnalysisResult.detectionDebug.detailedRepositories.length}件
+                            </span>
+                          </div>
+                          {customAnalysisResult.detectionDebug.detailedRepositories.length > 0 ? (
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {customAnalysisResult.detectionDebug.detailedRepositories.map((repository) => (
+                                <span key={repository.name} className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-slate-300">
+                                  {repository.name}
+                                  <span className="ml-1 text-[10px] text-slate-500">{REPOSITORY_READ_STATUS_LABELS[repository.status]}</span>
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="mt-2 text-slate-500">詳細確認できたリポジトリはありません。</p>
+                          )}
+                        </div>
+
+                        <div>
+                          <p className="font-semibold text-slate-100">見つかったノードと検出根拠</p>
+                          <div className="mt-2 max-h-64 space-y-2 overflow-y-auto pr-1">
+                            {customAnalysisResult.detectionDebug.nodeEvidence.map((nodeEvidence) => {
+                              const flowNode = FIXED_TREE_FLOW_NODES.find((node) =>
+                                node.data.detectionNodeIds?.includes(nodeEvidence.nodeId),
+                              );
+                              const nodeLabel = typeof flowNode?.data?.label === 'string' ? flowNode.data.label : nodeEvidence.nodeId;
+                              return (
+                                <div key={nodeEvidence.nodeId} className="rounded-md border border-slate-800 bg-slate-950/80 p-2">
+                                  <p className="font-semibold text-cyan-200">{nodeLabel}</p>
+                                  <ul className="mt-1 space-y-1 text-slate-400">
+                                    {nodeEvidence.matches.map((match, index) => (
+                                      <li key={`${match.type}-${match.value}-${match.repository ?? ''}-${index}`}>
+                                        {match.repository && <span className="text-slate-300">{match.repository} · </span>}
+                                        {DETECTION_EVIDENCE_LABELS[match.type]}: {match.value}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="rounded-lg border border-slate-800 bg-slate-900/50 p-2.5 text-slate-500">
+                        このスキャンにはリポジトリ別の検出根拠が保存されていません。
+                      </p>
+                    )}
+                    {radarData.map((category) => (
                       <div key={category.subject} className="rounded-lg border border-slate-800 bg-slate-900/50 p-2.5">
                         <div className="flex items-center justify-between font-semibold text-slate-100">
                           <span>{category.subject}</span>
-                          <span className="font-mono text-cyan-300">{category.score} / {category.fullMark}</span>
+                          <span className="font-mono text-cyan-300">検出 {category.detectedCount}件・相対値 {category.A}</span>
                         </div>
-                        <div className="mt-2 flex flex-wrap gap-1.5">
-                          {category.contributions.map((contribution) => (
-                            <span
-                              key={contribution.nodeId}
-                              className={`rounded px-1.5 py-0.5 font-mono text-[10px] ${contribution.acquired ? 'bg-emerald-500/15 text-emerald-300' : 'bg-slate-800 text-slate-500'}`}
-                            >
-                              {contribution.acquired ? '+' : '0 '} {contribution.points} {contribution.nodeId}
-                            </span>
-                          ))}
-                        </div>
+                        {canComparePrevious && <p className="mt-1 text-[10px] text-slate-500">前回の検出技術数: {category.previousDetectedCount ?? 0}件</p>}
                       </div>
                     ))}
                   </div>
@@ -1036,44 +1057,46 @@ export default function App() {
                 evidence={(
                   (selectedNode.data as unknown as SkillNodeData).detectionNodeIds ?? [selectedNode.id]
                 ).flatMap((detectionNodeId) =>
-                  customAnalysisResult?.detectionEvidence?.[detectionNodeId] ?? []
+                  customAnalysisResult?.detectionDebug?.nodeEvidence.find(
+                    (nodeEvidence) => nodeEvidence.nodeId === detectionNodeId,
+                  )?.matches ?? []
                 )}
                 onClose={() => setSelectedNodeId(null)}
               />
             )}
 
             {/* Tree Map Legend */}
-            <div className="absolute bottom-3 left-3 right-3 lg:right-auto bg-slate-950/90 border border-slate-900 backdrop-blur-md p-2 rounded-lg shadow-2xl text-[10px] leading-tight space-y-1.5 z-30 max-w-md">
-              <h4 className="text-[10px] font-bold uppercase tracking-wide text-white">スキルマップの凡例</h4>
-              <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-slate-400">
-                <div className="flex items-center gap-1">
-                  <span className="w-2 h-2 rounded bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+            <div className="absolute bottom-4 left-4 right-4 lg:right-auto bg-slate-950/90 border border-slate-900 backdrop-blur-md p-4 rounded-xl shadow-2xl text-sm space-y-3 z-30 max-w-2xl">
+              <h4 className="text-sm font-bold uppercase tracking-wide text-white">スキルマップの凡例</h4>
+              <div className="flex flex-wrap items-center gap-4 text-slate-400">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
                   <span>取得済み</span>
                 </div>
-                <div className="flex items-center gap-1">
-                  <span className="w-2 h-2 rounded bg-amber-400 animate-unlock-sparkle" />
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded bg-amber-400 animate-unlock-sparkle" />
                   <span>✨ 今回新しく解放 (点滅)</span>
                 </div>
-                <div className="flex items-center gap-1">
-                  <span className="w-2 h-2 rounded bg-amber-400 animate-pulse" />
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded bg-amber-400 animate-pulse" />
                   <span>おすすめ (次の一手)</span>
                 </div>
-                <div className="flex items-center gap-1">
-                  <span className="w-2 h-2 rounded bg-slate-700" />
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded bg-slate-700" />
                   <span>未開放 (ロック中)</span>
                 </div>
               </div>
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-slate-800/80 pt-1.5 text-[10px] text-slate-400">
-                <div className="flex items-center gap-1.5">
-                  <span className="block h-px w-6 bg-slate-500" />
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-slate-800/80 pt-2.5 text-xs text-slate-400">
+                <div className="flex items-center gap-2">
+                  <span className="block h-px w-8 bg-slate-500" />
                   <span>実線：技術の関連</span>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="block w-6 border-t-2 border-dashed border-emerald-400" />
+                <div className="flex items-center gap-2">
+                  <span className="block w-8 border-t-2 border-dashed border-emerald-400" />
                   <span>緑の点線：今回伸びた枝</span>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="block w-6 border-t-2 border-dashed border-amber-400" />
+                <div className="flex items-center gap-2">
+                  <span className="block w-8 border-t-2 border-dashed border-amber-400" />
                   <span>黄色の点線：次の一手</span>
                 </div>
               </div>

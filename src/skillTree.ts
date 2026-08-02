@@ -75,7 +75,7 @@ export const SKILL_TREE_NODES: SkillTreeNode[] = [
   node('ai-yolo', 'YOLO', 'ai', 3, ['yolo'], ['ai-computer-vision'], 135, 'Sparkles', 'リアルタイム物体検出モデル群。'),
   node('ai-hugging-face', 'Hugging Face', 'ai', 3, ['hugging_face'], ['ai-langchain'], 245, 'Sparkles', 'モデルとデータセットの共有・利用基盤。'),
   node('ai-computer-vision', 'Computer Vision', 'ai', 3, ['computer_vision'], [], 355, 'Cpu', '画像から意味を抽出する技術領域。'),
-  node('ai-openai-api', 'OpenAI API', 'ai', 4, ['openai'], ['ai-langchain'], 120, 'Sparkles', '生成AIモデルをアプリへ組み込むAPI。'),
+  node('ai-llm-api', 'LLM API', 'ai', 4, ['llm_api', 'openai'], ['ai-langchain'], 120, 'Sparkles', 'OpenAI・Gemini・Anthropicなどの生成AIモデルをアプリへ組み込むAPI。'),
   node('ai-langchain', 'LangChain', 'ai', 4, ['langchain'], [], 300, 'Link', 'LLMアプリの処理を組み立てるフレームワーク。'),
 
   node('network-http', 'HTTP', 'network', 1, ['http'], ['network-rest', 'network-websocket', 'network-cors'], 55, 'Workflow', 'Webの要求と応答を運ぶプロトコル。'),

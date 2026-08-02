@@ -3,6 +3,18 @@ export type SkillNodeStatus = 'locked' | 'unlocked' | 'new';
 
 export type SkillCategory = 'network' | 'infra' | 'backend' | 'frontend' | 'ai';
 
+export interface DetectionEvidenceMatch {
+  type: 'always' | 'language' | 'dependency' | 'file';
+  value: string;
+  repository?: string;
+}
+
+export interface DetectionDebugInfo {
+  listedRepositoryCount: number;
+  detailedRepositories: { name: string; status: 'read' | 'partial' | 'failed' }[];
+  nodeEvidence: { nodeId: string; matches: DetectionEvidenceMatch[] }[];
+}
+
 export interface SkillNodeData {
   [key: string]: unknown;
   label: string;
@@ -35,8 +47,9 @@ export interface RadarDataPoint {
   subject: string;
   A: number;
   fullMark: number;
-  // We can include a previous score B dynamically during rendering
-  B?: number; 
+  detectedCount?: number;
+  B?: number;
+  previousDetectedCount?: number;
 }
 
 export interface ArchetypeInfo {
@@ -57,11 +70,14 @@ export interface ScanRecord {
   timestamp: string;
   archetypeKey: string;
   scores: RadarDataPoint[];
+  detectedCounts?: Record<SkillCategory, number>;
+  evaluationVersion?: string;
+  dataStatus?: 'insufficient' | 'limited' | 'available';
+  detectionDebug?: DetectionDebugInfo;
   acquiredNodeIds: string[];
   recommendedNodeIds: string[];
   unlockedNodeIds: string[];
   previousScanId: string | null;
   customLogs: string[];
-  detectionEvidence?: Record<string, import('./evidenceDetectionRules').DetectionEvidence[]>;
 }
 

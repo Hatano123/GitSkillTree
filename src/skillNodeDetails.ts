@@ -1,4 +1,15 @@
-import { getDetectionDisplayConditions } from './evidenceDetectionRules.ts';
+import { NODE_SIGNATURES } from './detectNodes.ts';
+
+export function getDetectionDisplayConditions(nodeId: string): string[] {
+  const signature = NODE_SIGNATURES.find((candidate) => candidate.nodeId === nodeId);
+  if (!signature) return [];
+  if (signature.always) return ['すべてのスキャンで常時開放されます。'];
+  return [
+    ...(signature.languages ?? []).map((language) => `主要言語またはソースファイル: ${language}`),
+    ...(signature.dependencies ?? []).map((dependency) => `依存関係: ${dependency}`),
+    ...(signature.files ?? []).map((file) => `専用ファイル: ${file}`),
+  ];
+}
 
 export type SkillNodeDetail = {
   nodeId: string;

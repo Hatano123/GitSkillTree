@@ -1,78 +1,86 @@
-import type { ScanRecord } from './types';
+import type { ScanRecord, SkillCategory } from './types';
+import { NODE_SIGNATURES } from './detectNodes.ts';
+import { DETECTION_NODE_IDS, getRecommendedDetectionNodeIds } from './skillTree.ts';
+
+export const EVALUATION_VERSION = 'relative-detected-count-v2';
+
+export const CATEGORY_LABELS: Record<SkillCategory, string> = {
+  network: 'ネットワーク',
+  infra: 'インフラ',
+  backend: 'バックエンド',
+  frontend: 'フロントエンド',
+  ai: 'AI',
+};
+
+const CATEGORY_ORDER: readonly SkillCategory[] = ['network', 'infra', 'backend', 'frontend', 'ai'];
 
 export interface DeterministicEvaluation {
   archetypeKey: 'frontend' | 'ai' | 'devops' | 'fullstack';
-  scores: { subject: string; A: number; fullMark: number }[];
+  scores: { subject: string; A: number; fullMark: number; detectedCount: number }[];
+  detectedCounts: Record<SkillCategory, number>;
+  evaluationVersion: typeof EVALUATION_VERSION;
+  dataStatus: 'insufficient' | 'limited' | 'available';
   acquiredNodeIds: string[];
   recommendedNodeIds: string[];
   unlockedNodeIds: string[];
 }
 
-export interface ScoreBreakdown {
-  subject: string;
-  score: number;
-  fullMark: number;
-  contributions: { nodeId: string; points: number; acquired: boolean }[];
-}
+const LEGACY_NODE_IDS = ['git', 'html_css', 'javascript', 'typescript', 'react', 'nextjs', 'tailwind', 'nodejs', 'express', 'postgresql', 'docker', 'aws', 'github_actions', 'python', 'pytorch', 'openai', 'langchain'];
+const NODE_IDS = [...new Set([...LEGACY_NODE_IDS, ...DETECTION_NODE_IDS])];
+// Always-visible foundation nodes are not detected technologies and therefore
+// do not affect the relative distribution.
+const CATEGORY_BY_NODE = new Map(
+  NODE_SIGNATURES.filter((signature) => !signature.always).map((signature) => [signature.nodeId, signature.category]),
+);
 
-const NODE_IDS = ['git', 'html_css', 'javascript', 'typescript', 'react', 'nextjs', 'tailwind', 'nodejs', 'express', 'postgresql', 'docker', 'aws', 'github_actions', 'python', 'pytorch', 'openai', 'langchain'] as const;
-const SCORE_RULES = [
-  { subject: 'ネットワーク', nodes: { git: 30, github_actions: 40, aws: 30 } },
-  { subject: 'インフラ', nodes: { docker: 45, aws: 35, github_actions: 20 } },
-  { subject: 'バックエンド', nodes: { nodejs: 25, express: 25, postgresql: 30, typescript: 20 } },
-  { subject: 'フロントエンド', nodes: { html_css: 15, javascript: 20, typescript: 15, react: 20, nextjs: 20, tailwind: 10 } },
-  { subject: 'AI', nodes: { python: 20, pytorch: 35, openai: 25, langchain: 20 } },
-] as const;
-const RECOMMENDATION_ORDER = ['javascript', 'typescript', 'react', 'nextjs', 'tailwind', 'nodejs', 'express', 'postgresql', 'docker', 'github_actions', 'aws', 'python', 'openai', 'pytorch', 'langchain', 'html_css', 'git'] as const;
-
-function scoreFor(nodes: Record<string, number>, acquired: Set<string>): number {
-  return Math.min(100, Object.entries(nodes).reduce((total, [nodeId, points]) => total + (acquired.has(nodeId) ? points : 0), 0));
-}
-
-function chooseArchetype(scores: number[]): DeterministicEvaluation['archetypeKey'] {
-  const [, infra, backend, frontend, ai] = scores;
-  if (ai > Math.max(infra, backend, frontend)) return 'ai';
-  if (infra > Math.max(backend, frontend)) return 'devops';
-  if (frontend > backend) return 'frontend';
+function chooseArchetype(values: Record<SkillCategory, number>): DeterministicEvaluation['archetypeKey'] {
+  if (values.ai > Math.max(values.infra, values.backend, values.frontend)) return 'ai';
+  if (values.infra > Math.max(values.backend, values.frontend)) return 'devops';
+  if (values.frontend > values.backend) return 'frontend';
   return 'fullstack';
+}
+
+export function calculateTechnologyTrend(detectedNodeIds: readonly string[]) {
+  const detected = new Set(detectedNodeIds);
+  const counts = Object.fromEntries(CATEGORY_ORDER.map((category) => [category, 0])) as Record<SkillCategory, number>;
+  for (const nodeId of detected) {
+    const category = CATEGORY_BY_NODE.get(nodeId);
+    if (category) counts[category] += 1;
+  }
+  const maximumDetectedCount = Math.max(...Object.values(counts));
+  const values = Object.fromEntries(CATEGORY_ORDER.map((category) => [
+    category,
+    maximumDetectedCount === 0 ? 0 : Math.round(counts[category] / maximumDetectedCount * 100),
+  ])) as Record<SkillCategory, number>;
+  return { counts, values, maximumDetectedCount };
 }
 
 /** Pure, ordered evaluation: identical detected GitHub facts always produce identical output. */
 export function evaluateNodes(detectedNodeIds: readonly string[], previousScan: Pick<ScanRecord, 'acquiredNodeIds'> | null = null): DeterministicEvaluation {
   const detected = new Set(detectedNodeIds);
   const acquiredNodeIds = NODE_IDS.filter((id) => detected.has(id));
-  const acquired = new Set<string>(acquiredNodeIds);
   const previous = new Set(previousScan?.acquiredNodeIds ?? []);
-  const scoreValues = SCORE_RULES.map((rule) => scoreFor(rule.nodes, acquired));
+  const trend = calculateTechnologyTrend(acquiredNodeIds);
+  const total = Object.values(trend.counts).reduce((sum, count) => sum + count, 0);
 
   return {
-    archetypeKey: chooseArchetype(scoreValues),
-    scores: SCORE_RULES.map((rule, index) => ({ subject: rule.subject, A: scoreValues[index], fullMark: 100 })),
+    archetypeKey: chooseArchetype(trend.values),
+    scores: CATEGORY_ORDER.map((category) => ({
+      subject: CATEGORY_LABELS[category],
+      A: trend.values[category],
+      fullMark: 100,
+      detectedCount: trend.counts[category],
+    })),
+    detectedCounts: trend.counts,
+    evaluationVersion: EVALUATION_VERSION,
+    dataStatus: total <= 2 ? 'insufficient' : total <= 7 ? 'limited' : 'available',
     acquiredNodeIds,
-    recommendedNodeIds: RECOMMENDATION_ORDER.filter((id) => !acquired.has(id)).slice(0, 3),
+    recommendedNodeIds: getRecommendedDetectionNodeIds(acquiredNodeIds, 3),
     unlockedNodeIds: previousScan ? acquiredNodeIds.filter((id) => !previous.has(id)) : [],
   };
 }
 
-/** Returns the same fixed point rules used for the radar chart, for UI disclosure. */
-export function getScoreBreakdown(acquiredNodeIds: readonly string[]): ScoreBreakdown[] {
-  const acquired = new Set(acquiredNodeIds);
-  return SCORE_RULES.map((rule) => {
-    const contributions = Object.entries(rule.nodes).map(([nodeId, points]) => ({
-      nodeId,
-      points,
-      acquired: acquired.has(nodeId),
-    }));
-    return {
-      subject: rule.subject,
-      score: scoreFor(rule.nodes, acquired),
-      fullMark: 100,
-      contributions,
-    };
-  });
-}
-
 export function fallbackExplanation(username: string, unlockedNodeIds: readonly string[]): string[] {
-  if (unlockedNodeIds.length > 0) return [`${username}さん、新しいスキルノードを解放しました。`, `今回解放: ${unlockedNodeIds.join(', ')}`, '次のクエストも、リポジトリでの実践を重ねて進めましょう。'];
-  return [`${username}さんのスキルツリーをルールベースで更新しました。`, '新しいノードの解放はありませんでした。', '次のクエストに取り組むと、スキルツリーが成長します。'];
+  if (unlockedNodeIds.length > 0) return [`${username}さんの公開情報から新しい使用技術を確認しました。`, `今回新たに確認: ${unlockedNodeIds.join(', ')}`, '表示はGitHub上の技術傾向であり、能力や習熟度の評価ではありません。'];
+  return [`${username}さんの公開情報を更新しました。`, '今回新たに確認できた技術はありませんでした。', '表示はGitHub上で確認できた範囲に限られます。'];
 }
