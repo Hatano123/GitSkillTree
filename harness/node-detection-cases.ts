@@ -106,14 +106,36 @@ export const NODE_DETECTION_CASES: readonly NodeDetectionCase[] = [
     forbidden: ['aws', 'gcp'],
   },
   {
-    id: 'gemini-is-not-openai',
-    reason: 'A Gemini SDK dependency is direct evidence for Gemini, not OpenAI.',
+    id: 'gemini-unlocks-llm-api',
+    reason: 'The official Gemini SDK is direct evidence of LLM API integration.',
     facts: {
       languages: ['TypeScript'],
       dependencies: ['@google/generative-ai'],
       files: ['package.json', 'src/gemini.ts'],
     },
-    expected: ['git', 'typescript'],
+    expected: ['git', 'typescript', 'llm_api'],
+    forbidden: ['openai'],
+  },
+  {
+    id: 'anthropic-unlocks-llm-api',
+    reason: 'The official Anthropic SDK is direct evidence of LLM API integration.',
+    facts: {
+      languages: ['TypeScript'],
+      dependencies: ['@anthropic-ai/sdk'],
+      files: ['package.json', 'src/claude.ts'],
+    },
+    expected: ['git', 'typescript', 'llm_api'],
+    forbidden: ['openai'],
+  },
+  {
+    id: 'openai-unlocks-llm-api',
+    reason: 'The official OpenAI SDK is direct evidence of LLM API integration.',
+    facts: {
+      languages: ['Python'],
+      dependencies: ['openai'],
+      files: ['requirements.txt', 'app.py'],
+    },
+    expected: ['git', 'python', 'llm_api'],
     forbidden: ['openai'],
   },
   {

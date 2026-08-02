@@ -29,7 +29,7 @@ export const RAW_NODES = [
   { id: 'express', level: 2, category: 'backend', label: 'Express', description: 'Node.jsのためのシンプルで高速なウェブフレームワーク。', iconName: 'Server', angle: 108 },
   { id: 'aws', level: 2, category: 'infra', label: 'AWS', description: 'グローバルなクラウドコンピューティングプラットフォーム。', iconName: 'Cloud', angle: 180 },
   { id: 'pytorch', level: 2, category: 'ai', label: 'PyTorch', description: '柔軟で直感的なディープラーニングフレームワーク。', iconName: 'Cpu', angle: 306 },
-  { id: 'openai', level: 2, category: 'ai', label: 'OpenAI API', description: 'GPTモデルなどを活用した高度なAI機能の統合。', iconName: 'Sparkles', angle: 342 },
+  { id: 'llm_api', level: 2, category: 'ai', label: 'LLM API', description: 'OpenAI・Gemini・Anthropicなどの生成AIモデルを活用した機能統合。', iconName: 'Sparkles', angle: 342 },
 
   // Level 3: Advanced/Applied (Radius 3)
   { id: 'react', level: 3, category: 'frontend', label: 'React', description: 'コンポーネント指向UIライブラリのデファクト。', iconName: 'Atom', angle: 10 },
@@ -92,14 +92,14 @@ export const INITIAL_EDGES = [
   { id: 'e-node-express', source: 'nodejs', target: 'express' },
   { id: 'e-docker-aws', source: 'docker', target: 'aws' },
   { id: 'e-python-pytorch', source: 'python', target: 'pytorch' },
-  { id: 'e-pytorch-openai', source: 'pytorch', target: 'openai' },
+  { id: 'e-pytorch-llm-api', source: 'pytorch', target: 'llm_api' },
 
   // Level 2 to Level 3
   { id: 'e-ts-react', source: 'typescript', target: 'react' },
   { id: 'e-react-nextjs', source: 'react', target: 'nextjs' },
   { id: 'e-react-tailwind', source: 'react', target: 'tailwind' },
   { id: 'e-express-postgres', source: 'express', target: 'postgresql' },
-  { id: 'e-openai-langchain', source: 'openai', target: 'langchain' }
+  { id: 'e-llm-api-langchain', source: 'llm_api', target: 'langchain' }
 ];
 
 export const ARCHETYPES: Record<string, ArchetypeInfo> = {
@@ -112,23 +112,23 @@ export const ARCHETYPES: Record<string, ArchetypeInfo> = {
     nextSteps: [
       'Next.js (SSRとNext-Genルーティングによる高速化)',
       'Node.js (BFF層やWeb API開発への領域拡大)',
-      'OpenAI API (UIへのインタラクティブなAIチャットの組み込み)'
+      'LLM API (UIへのインタラクティブなAIチャットの組み込み)'
     ],
     acquiredNodeIds: ['git', 'html_css', 'javascript', 'typescript', 'react', 'tailwind'],
-    recommendedNodeIds: ['nextjs', 'nodejs', 'openai']
+    recommendedNodeIds: ['nextjs', 'nodejs', 'llm_api']
   },
   ai: {
     name: 'AI / Data領域を中心とした技術傾向',
     description: 'Python、機械学習、AI APIなど、データとAIに関わる技術が多く確認されています。',
     themeColor: 'text-cyan-400 border-cyan-500/30 bg-cyan-950/20 shadow-cyan-900/10',
     accentColor: '#22d3ee',
-    scores: relativeTrend(['git', 'python', 'pytorch', 'openai']),
+    scores: relativeTrend(['git', 'python', 'pytorch', 'llm_api']),
     nextSteps: [
       'LangChain (複数のLLMやツールを繋ぐエージェントの作成)',
       'Docker (機械学習モデルや依存ライブラリの環境コンテナ化)',
       'FastAPI / Express (AIエンジンと外部アプリを繋ぐAPI開発)'
     ],
-    acquiredNodeIds: ['git', 'python', 'pytorch', 'openai'],
+    acquiredNodeIds: ['git', 'python', 'pytorch', 'llm_api'],
     recommendedNodeIds: ['langchain', 'docker', 'nodejs']
   },
   devops: {
@@ -154,10 +154,10 @@ export const ARCHETYPES: Record<string, ArchetypeInfo> = {
     nextSteps: [
       'Next.js (サーバー側とクライアント側を密に結合する高度開発)',
       'AWS (デプロイ環境の自律的スケーリングとサーバーレス化)',
-      'OpenAI API (フルスタックアプリに最新AI機能を付加する)'
+      'LLM API (フルスタックアプリに最新AI機能を付加する)'
     ],
     acquiredNodeIds: ['git', 'html_css', 'javascript', 'typescript', 'react', 'nodejs', 'express', 'postgresql', 'docker'],
-    recommendedNodeIds: ['nextjs', 'aws', 'openai']
+    recommendedNodeIds: ['nextjs', 'aws', 'llm_api']
   }
 };
 

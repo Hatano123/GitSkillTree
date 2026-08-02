@@ -23,6 +23,14 @@ test('a detected upper-layer technology unlocks without prerequisites', () => {
   assert.equal(flow.nodes.find((node) => node.id === 'frontend-react')?.data.status, 'locked');
 });
 
+test('LLM API node accepts the new id and legacy saved scans', () => {
+  const llmApiNode = SKILL_TREE_NODES.find((node) => node.id === 'ai-llm-api');
+  assert.equal(llmApiNode?.label, 'LLM API');
+  assert.deepEqual(llmApiNode?.detectionNodeIds, ['llm_api', 'openai']);
+  assert.equal(createCategoryFlow('ai', ['llm_api']).nodes.find((node) => node.id === 'ai-llm-api')?.data.status, 'unlocked');
+  assert.equal(createCategoryFlow('ai', ['openai']).nodes.find((node) => node.id === 'ai-llm-api')?.data.status, 'unlocked');
+});
+
 test('next steps are undetected adjacent nodes and limited to three', () => {
   const next = getNextTreeNodes(['javascript', 'react'], 'frontend');
   assert.ok(next.length <= 3);

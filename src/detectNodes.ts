@@ -71,7 +71,22 @@ export const NODE_SIGNATURES: readonly NodeSignature[] = [
   { nodeId: 'yolo', category: 'ai', dependencies: ['ultralytics'] },
   { nodeId: 'hugging_face', category: 'ai', dependencies: ['transformers', 'huggingface-hub', '@huggingface/inference'] },
   { nodeId: 'computer_vision', category: 'ai' },
-  { nodeId: 'openai', category: 'ai', dependencies: ['openai', '@langchain/openai'] },
+  // Legacy persisted scans may still contain `openai`; it has no live matcher.
+  { nodeId: 'openai', category: 'ai' },
+  {
+    nodeId: 'llm_api',
+    category: 'ai',
+    dependencies: [
+      'openai',
+      '@langchain/openai',
+      '@google/genai',
+      '@google/generative-ai',
+      'google-genai',
+      'google-generativeai',
+      'anthropic',
+      '@anthropic-ai/sdk',
+    ],
+  },
   { nodeId: 'langchain', category: 'ai', dependencies: ['langchain', '@langchain/core', '@langchain/openai'] },
 
   { nodeId: 'http', category: 'network', dependencies: ['axios', 'got', 'undici', 'node-fetch'] },

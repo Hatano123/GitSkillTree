@@ -2,7 +2,7 @@ import type { ScanRecord, SkillCategory } from './types';
 import { NODE_SIGNATURES } from './detectNodes.ts';
 import { DETECTION_NODE_IDS, getRecommendedDetectionNodeIds } from './skillTree.ts';
 
-export const EVALUATION_VERSION = 'relative-detected-count-v1';
+export const EVALUATION_VERSION = 'relative-detected-count-v2';
 
 export const CATEGORY_LABELS: Record<SkillCategory, string> = {
   network: 'ネットワーク',

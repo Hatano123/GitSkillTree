@@ -71,7 +71,8 @@ const UNLOCK_TIPS: Record<string, string> = {
   github_actions: 'リポジトリに ".github/workflows" ディレクトリを追加し、YAMLパイプラインを作成してください。',
   python: 'Pythonファイル（.py）を含むリポジトリを公開コミットしてください。',
   pytorch: 'requirements.txtに "torch" を追加するか、PyTorchを使用した機械学習コードを作成してください。',
-  openai: 'OpenAI APIキーを呼び出すコード、または依存ライブラリを追加してください。',
+  openai: 'OpenAI・Gemini・Anthropicなどの公式SDKを依存関係に追加してください。',
+  llm_api: 'OpenAI・Gemini・Anthropicなどの公式SDKを依存関係に追加してください。',
   langchain: 'requirements.txtに "langchain" または "langchain-core" を追加してください。'
 };
 

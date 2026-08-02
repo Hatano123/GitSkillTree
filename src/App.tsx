@@ -965,7 +965,9 @@ export default function App() {
                           <p className="font-semibold text-slate-100">見つかったノードと検出根拠</p>
                           <div className="mt-2 max-h-64 space-y-2 overflow-y-auto pr-1">
                             {customAnalysisResult.detectionDebug.nodeEvidence.map((nodeEvidence) => {
-                              const flowNode = FIXED_TREE_FLOW_NODES.find((node) => node.id === nodeEvidence.nodeId);
+                              const flowNode = FIXED_TREE_FLOW_NODES.find((node) =>
+                                node.data.detectionNodeIds?.includes(nodeEvidence.nodeId),
+                              );
                               const nodeLabel = typeof flowNode?.data?.label === 'string' ? flowNode.data.label : nodeEvidence.nodeId;
                               return (
                                 <div key={nodeEvidence.nodeId} className="rounded-md border border-slate-800 bg-slate-950/80 p-2">
