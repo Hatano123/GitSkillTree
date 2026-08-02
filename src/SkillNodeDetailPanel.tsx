@@ -114,7 +114,7 @@ export default function SkillNodeDetailPanel({
                 />
               </div>
               <p className="mt-2 text-[11px] leading-5 text-slate-500">
-                新しい検出証拠が増えるたびに、このノードへ10 EXP。繰り返しスキャンだけでは増えません。
+                この技術が別の公開リポジトリでも確認されると+10 EXP。同じリポジトリは1回だけです。
               </p>
             </section>
           )}

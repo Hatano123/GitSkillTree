@@ -683,7 +683,7 @@ export default function App() {
             </h2>
             <p className="text-slate-400 text-sm md:text-base leading-relaxed">
               初回スキャンでノードごとのEXPを記録。開発した後に再スキャンすると、<br />
-              <strong>新しく確認できた技術の証拠だけ</strong>がEXPになり、スキルツリーが育ちます。
+              <strong>技術を確認できたリポジトリ数</strong>がEXPになり、スキルツリーが育ちます。
             </p>
           </div>
 

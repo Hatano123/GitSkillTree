@@ -23,7 +23,8 @@ production build.
 `growth-system-cases.ts` protects the MVP node-EXP rules:
 
 - first detection grants 40 EXP to that node;
-- each new unique, auditable evidence item grants 10 EXP;
+- each unique repository with auditable evidence grants 10 EXP, including the first scan;
+- multiple matching files or dependencies in one repository count only once;
 - rescanning identical evidence grants 0 EXP;
 - temporarily incomplete API results never remove earned node EXP;
 - existing scans establish a baseline without showing fake rewards;

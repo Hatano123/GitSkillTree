@@ -18,12 +18,12 @@ export interface DetectionDebugInfo {
 export interface NodeExpProgress {
   exp: number;
   level: 1 | 2 | 3;
-  evidenceKeys: string[];
+  repositoryKeys: string[];
   lastGainedExp: number;
 }
 
 export interface GrowthSnapshot {
-  version: 'node-exp-v1';
+  version: 'node-exp-v2';
   totalExp: number;
   gainedExp: number;
   scanCount: number;

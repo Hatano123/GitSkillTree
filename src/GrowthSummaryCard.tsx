@@ -34,8 +34,8 @@ export default function GrowthSummaryCard({ growth, questLabel, onRescan }: Grow
           <Target className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
           <div className="min-w-0">
             <p className="text-[10px] font-black uppercase tracking-wider text-amber-300">Next Quest</p>
-            <p className="mt-1 text-sm font-bold text-white">{questLabel ? `${questLabel} の直接証拠を追加する` : '新しい技術の直接証拠を追加する'}</p>
-            <p className="mt-1 text-[11px] leading-5 text-slate-500">新しい依存関係・専用ファイル・利用リポジトリが見つかると、そのノードにEXPが入ります。</p>
+            <p className="mt-1 text-sm font-bold text-white">{questLabel ? `${questLabel} を使うリポジトリを増やす` : '新しい技術を使うリポジトリを増やす'}</p>
+            <p className="mt-1 text-[11px] leading-5 text-slate-500">その技術を使う公開リポジトリが1件見つかるごとに、そのノードへ10 EXP入ります。</p>
           </div>
         </div>
 
