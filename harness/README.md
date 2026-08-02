@@ -18,6 +18,21 @@ npm run harness
 The complete gate runs the existing tests, acceptance corpus, lint, and the
 production build.
 
+## Growth-system acceptance loop
+
+`growth-system-cases.ts` protects the MVP node-EXP rules:
+
+- first detection grants 40 EXP to that node;
+- each new unique, auditable evidence item grants 10 EXP;
+- rescanning identical evidence grants 0 EXP;
+- temporarily incomplete API results never remove earned node EXP;
+- existing scans establish a baseline without showing fake rewards;
+- nodes change to LV.2 at 70 EXP and LV.3 at 100 EXP.
+
+Add a failing growth case before changing the formula or persistence behavior.
+The growth harness runs as part of both `npm run harness:test` and
+`npm run harness`.
+
 ## Scan a real public account
 
 After `gh auth login`, run the guarded scanner:

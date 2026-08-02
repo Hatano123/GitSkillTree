@@ -80,6 +80,8 @@ const CustomNode: React.FC<NodeProps> = ({ id, data }) => {
   const nodeData = data as unknown as SkillNodeData;
   const Icon = BRAND_ICON_MAP[nodeData.label] || ICON_MAP[nodeData.iconName] || Code;
   const isCategoryNode = nodeData.kind === 'category';
+  const hasExp = typeof nodeData.exp === 'number' && typeof nodeData.level === 'number';
+  const expProgress = Math.max(0, Math.min(100, nodeData.expProgress ?? 0));
 
   // Genre/Category Specific Colors
   const categoryColors = {
@@ -152,21 +154,33 @@ const CustomNode: React.FC<NodeProps> = ({ id, data }) => {
       {/* Target handle for connections */}
       <Handle type="target" position={Position.Top} className="!w-1.5 !h-1.5 !bg-slate-700 !border-slate-950" />
       
-      {/* Circle Circle Node */}
-      <div className={`${isCategoryNode ? 'w-[72px] h-[72px]' : 'w-14 h-14'} rounded-full flex items-center justify-center transition-all duration-300 relative shadow-lg ${categoryColors.shadow} ${categoryColors.border} ${nodeStyle}`}>
-        <div className={`${categoryColors.text} transition-transform duration-300 group-hover:scale-110`}>
-          <Icon className="w-6 h-6" />
-        </div>
-        
-        {/* State indicator dot */}
-        <span className={`absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full ${dotColor}`} />
-        
-        {/* Sparkle star for unlocked state */}
-        {nodeData.state === 'unlocked' && (
-          <span className="absolute -bottom-1 -right-1 bg-amber-400 text-slate-950 text-[8px] font-black px-1 rounded-full shadow-md animate-bounce">
-            NEW!
-          </span>
+      {/* Node EXP ring and circle */}
+      <div className={`${isCategoryNode ? 'h-[72px] w-[72px]' : 'h-14 w-14'} relative`}>
+        {hasExp && (
+          <span
+            className={`absolute -inset-1 rounded-full transition-all duration-700 ${nodeData.level === 3 ? 'shadow-[0_0_24px_rgba(34,211,238,0.65)]' : nodeData.level === 2 ? 'shadow-[0_0_16px_rgba(99,102,241,0.45)]' : ''}`}
+            style={{ background: `conic-gradient(#22d3ee ${expProgress}%, #1e293b ${expProgress}% 100%)` }}
+          />
         )}
+        <div className={`${isCategoryNode ? 'h-[72px] w-[72px]' : 'h-14 w-14'} rounded-full flex items-center justify-center transition-all duration-300 relative shadow-lg ${categoryColors.shadow} ${categoryColors.border} ${nodeStyle}`}>
+          <div className={`${categoryColors.text} transition-transform duration-300 group-hover:scale-110`}>
+            <Icon className="w-6 h-6" />
+          </div>
+
+          <span className={`absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full ${dotColor}`} />
+
+          {nodeData.state === 'unlocked' && (
+            <span className="absolute -bottom-1 -right-1 bg-amber-400 text-slate-950 text-[8px] font-black px-1 rounded-full shadow-md animate-bounce">
+              NEW!
+            </span>
+          )}
+
+          {hasExp && nodeData.state !== 'unlocked' && (
+            <span className="absolute -bottom-1.5 rounded-full border border-cyan-400/40 bg-slate-950 px-1.5 py-0.5 font-mono text-[8px] font-black text-cyan-200 shadow-lg">
+              LV.{nodeData.level}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Label tag under the circle */}
@@ -188,6 +202,18 @@ const CustomNode: React.FC<NodeProps> = ({ id, data }) => {
         </div>
         
         <p className="leading-relaxed text-[11px] text-slate-400 mb-2">{nodeData.description}</p>
+
+        {hasExp && (
+          <div className="mb-2 rounded-lg border border-cyan-500/20 bg-cyan-500/5 p-2">
+            <div className="flex items-center justify-between font-mono text-[10px]">
+              <span className="font-black text-cyan-200">LV.{nodeData.level} · {nodeData.exp} EXP</span>
+              {(nodeData.gainedExp ?? 0) > 0 && <span className="font-black text-emerald-300">+{nodeData.gainedExp}</span>}
+            </div>
+            <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-800">
+              <div className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-cyan-400" style={{ width: `${expProgress}%` }} />
+            </div>
+          </div>
+        )}
         
         {/* Custom unlock instructions if locked or recommended */}
         {nodeData.state !== 'acquired' && nodeData.state !== 'unlocked' && (

@@ -22,6 +22,7 @@ import {
 import CustomNode from './CustomNode';
 import CircularEdge from './CircularEdge';
 import SkillNodeDetailPanel from './SkillNodeDetailPanel';
+import GrowthSummaryCard from './GrowthSummaryCard';
 import { ARCHETYPES, MOCK_REPOS } from './mockData';
 import { FIXED_TREE_FLOW_NODES, FIXED_TREE_FLOW_EDGES } from './skillTree';
 import { saveScan, getScanById, getLatestScanByUsername } from './firebase';
@@ -30,7 +31,8 @@ import { detectAcquiredNodesWithDebug } from './detectNodes';
 import { generateExplanationWithGemini } from './gemini';
 import type { AnalysisResult } from './gemini';
 import { EVALUATION_VERSION, evaluateNodes, fallbackExplanation } from './evaluation';
-import type { ScanRecord, SkillNodeData } from './types';
+import { advanceNodeGrowth, GROWTH_VERSION, nodeExpProgressPercent } from './growth';
+import type { DetectionDebugInfo, ScanRecord, SkillNodeData } from './types';
 
 const GithubIcon = () => (
   <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -62,8 +64,27 @@ const REPOSITORY_READ_STATUS_LABELS = {
   failed: '取得失敗',
 } as const;
 
+function createDemoDetectionDebug(nodeIds: readonly string[]): DetectionDebugInfo {
+  return {
+    listedRepositoryCount: 1,
+    detailedRepositories: [{ name: 'growth-demo', status: 'read' }],
+    nodeEvidence: nodeIds.map((nodeId) => ({
+      nodeId,
+      matches: nodeId === 'git'
+        ? [{ type: 'always', value: '常時開放' }]
+        : [{ type: 'file', value: `demo/${nodeId}.evidence`, repository: 'growth-demo' }],
+    })),
+  };
+}
+
 function toAnalysisResult(scan: ScanRecord): AnalysisResult {
   const normalized = evaluateNodes(scan.acquiredNodeIds);
+  const growth = scan.growth ?? (scan.detectionDebug ? advanceNodeGrowth({
+    detectedNodeIds: scan.acquiredNodeIds,
+    detectionDebug: scan.detectionDebug,
+    previousGrowth: null,
+    migrationBaseline: true,
+  }) : undefined);
   return {
     archetypeKey: normalized.archetypeKey,
     scores: scan.evaluationVersion === EVALUATION_VERSION ? scan.scores.map((point) => ({ ...point, detectedCount: point.detectedCount ?? 0 })) : normalized.scores,
@@ -75,6 +96,7 @@ function toAnalysisResult(scan: ScanRecord): AnalysisResult {
     unlockedNodeIds: scan.unlockedNodeIds,
     customLogs: scan.customLogs,
     detectionDebug: scan.detectionDebug,
+    growth,
   };
 }
 
@@ -197,10 +219,18 @@ export default function App() {
       // loading flow so the result screen is reachable.
       setLoadingStep(4);
       window.setTimeout(() => {
-        const evaluation = evaluateNodes(mockArchetype.acquiredNodeIds);
+        const detectionDebug = createDemoDetectionDebug(mockArchetype.acquiredNodeIds);
+        const growth = advanceNodeGrowth({
+          detectedNodeIds: mockArchetype.acquiredNodeIds,
+          detectionDebug,
+          previousGrowth: null,
+        });
+        const evaluation = evaluateNodes(Object.keys(growth.nodeProgress));
         setCustomAnalysisResult({
           ...evaluation,
-          customLogs: mockArchetype.nextSteps
+          customLogs: mockArchetype.nextSteps,
+          detectionDebug,
+          growth,
         });
         setAnalysisResultSource('fresh');
       }, 400);
@@ -251,7 +281,19 @@ export default function App() {
       const comparablePreviousScan = prevScanRecord?.evaluationVersion === EVALUATION_VERSION
         ? prevScanRecord
         : null;
-      const evaluation = evaluateNodes(detectedNodes, comparablePreviousScan);
+      const previousGrowth = prevScanRecord?.growth?.version === GROWTH_VERSION
+        ? prevScanRecord.growth
+        : null;
+      const growth = advanceNodeGrowth({
+        detectedNodeIds: detectedNodes,
+        detectionDebug: detection.debug,
+        previousGrowth,
+        migrationBaseline: Boolean(prevScanRecord && !previousGrowth),
+      });
+      const evaluation = {
+        ...evaluateNodes(Object.keys(growth.nodeProgress), comparablePreviousScan),
+        unlockedNodeIds: prevScanRecord ? growth.newNodeIds : [],
+      };
       let customLogs = fallbackExplanation(metadata.username, evaluation.unlockedNodeIds);
       try {
         customLogs = await generateExplanationWithGemini(metadata, evaluation);
@@ -264,7 +306,7 @@ export default function App() {
       setTimingLogs(prev => [...prev, { label: LOADING_STEP_LABELS[3], ms: Math.round(performance.now() - t0) }]);
       setLoadingStep(4);
 
-      setCustomAnalysisResult({ ...evaluation, customLogs, detectionDebug: detection.debug });
+      setCustomAnalysisResult({ ...evaluation, customLogs, detectionDebug: detection.debug, growth });
       setAnalysisResultSource('fresh');
     } catch (err: any) {
       console.error(err);
@@ -291,10 +333,17 @@ export default function App() {
     setErrorMessage(null);
 
     setTimeout(() => {
-      const baselineNodeIds = ['javascript', 'typescript', 'react', 'nodejs', 'express', 'postgresql'];
+      const baselineNodeIds = ['git', 'javascript', 'typescript', 'react', 'nodejs', 'express', 'postgresql'];
       const currentNodeIds = [...baselineNodeIds, 'nextjs', 'docker'];
+      const baselineDebug = createDemoDetectionDebug(baselineNodeIds);
+      const currentDebug = createDemoDetectionDebug(currentNodeIds);
+      const baselineGrowth = advanceNodeGrowth({ detectedNodeIds: baselineNodeIds, detectionDebug: baselineDebug, previousGrowth: null });
+      const currentGrowth = advanceNodeGrowth({ detectedNodeIds: currentNodeIds, detectionDebug: currentDebug, previousGrowth: baselineGrowth });
       const baselineEvaluation = evaluateNodes(baselineNodeIds);
-      const currentEvaluation = evaluateNodes(currentNodeIds, { acquiredNodeIds: baselineNodeIds });
+      const currentEvaluation = {
+        ...evaluateNodes(currentNodeIds, { acquiredNodeIds: baselineNodeIds }),
+        unlockedNodeIds: currentGrowth.newNodeIds,
+      };
       // Baseline Scan setup
       const baselineScan: ScanRecord = {
         id: 'baseline-demo-id',
@@ -302,6 +351,8 @@ export default function App() {
         avatarUrl: 'https://avatars.githubusercontent.com/u/74620?v=4',
         timestamp: '2026/07/07 10:00:00',
         ...baselineEvaluation,
+        detectionDebug: baselineDebug,
+        growth: baselineGrowth,
         previousScanId: null,
         customLogs: []
       };
@@ -313,6 +364,8 @@ export default function App() {
       // Updated Growth Scan setup
       setCustomAnalysisResult({
         ...currentEvaluation,
+        detectionDebug: currentDebug,
+        growth: currentGrowth,
         customLogs: [
           '🎉 前回のスキャンから新たに Next.js が導入されました！フロントエンド技術が一段と強化されています。',
           '🐳 Dockerfileのコミットを検知！インフラノード Docker が新しく解放されました。',
@@ -328,6 +381,8 @@ export default function App() {
         avatarUrl: 'https://avatars.githubusercontent.com/u/74620?v=4',
         timestamp: new Date().toLocaleString('ja-JP'),
         ...currentEvaluation,
+        detectionDebug: currentDebug,
+        growth: currentGrowth,
         previousScanId: 'baseline-demo-id',
         customLogs: [
           '🎉 前回のスキャンから新たに Next.js が導入されました！フロントエンド技術が一段と強化されています。',
@@ -388,6 +443,7 @@ export default function App() {
         detectedCounts: customAnalysisResult.detectedCounts,
         evaluationVersion: customAnalysisResult.evaluationVersion,
         dataStatus: customAnalysisResult.dataStatus,
+        growth: customAnalysisResult.growth,
         acquiredNodeIds,
         recommendedNodeIds,
         unlockedNodeIds,
@@ -428,6 +484,11 @@ export default function App() {
       let state: 'acquired' | 'recommended' | 'locked' | 'unlocked' = 'locked';
 
       const detectionNodeIds = node.data.detectionNodeIds ?? [node.id];
+      const nodeProgress = node.data.kind === 'category'
+        ? undefined
+        : detectionNodeIds
+          .map((id) => customAnalysisResult?.growth?.nodeProgress[id])
+          .find(Boolean);
       if (detectionNodeIds.some((id) => unlockedIds.includes(id))) {
         state = 'unlocked';
       } else if (detectionNodeIds.some((id) => acquiredIds.includes(id))) {
@@ -444,6 +505,10 @@ export default function App() {
         data: {
           ...node.data,
           state,
+          exp: nodeProgress?.exp,
+          level: nodeProgress?.level,
+          expProgress: nodeProgress ? nodeExpProgressPercent(nodeProgress) : undefined,
+          gainedExp: nodeProgress?.lastGainedExp,
         },
       };
     });
@@ -534,6 +599,13 @@ export default function App() {
     : customAnalysisResult?.dataStatus === 'limited'
       ? '限定的な傾向'
       : 'データ不足';
+  const growthQuestLabel = useMemo(() => {
+    const recommendedNodeId = customAnalysisResult?.recommendedNodeIds[0];
+    if (!recommendedNodeId) return undefined;
+    return FIXED_TREE_FLOW_NODES.find((node) =>
+      node.data.kind === 'skill' && node.data.detectionNodeIds?.includes(recommendedNodeId),
+    )?.data.label;
+  }, [customAnalysisResult]);
 
   const handleCopyLink = () => {
     const idToShare = savedScanId;
@@ -610,8 +682,8 @@ export default function App() {
               </span>
             </h2>
             <p className="text-slate-400 text-sm md:text-base leading-relaxed">
-              初回スキャンで「ベースライン」を作成。開発した後に再スキャンすると、<br />
-              <strong>前回から変化した使用技術の分布</strong>と<strong>新しく確認された技術（アンロック演出）</strong>を確認できます。
+              初回スキャンでノードごとのEXPを記録。開発した後に再スキャンすると、<br />
+              <strong>新しく確認できた技術の証拠だけ</strong>がEXPになり、スキルツリーが育ちます。
             </p>
           </div>
 
@@ -848,6 +920,13 @@ export default function App() {
               </div>
 
               {/* Archetype Description */}
+              <GrowthSummaryCard
+                growth={customAnalysisResult?.growth}
+                questLabel={growthQuestLabel}
+                onRescan={handleBackToInput}
+              />
+
+              {/* Archetype Description */}
               <div className={`p-4 rounded-xl border transition-all duration-300 ${archetype.themeColor}`}>
                 <div className="flex items-center gap-2 mb-2">
                   <Award className="w-5 h-5 shrink-0" />
@@ -966,7 +1045,7 @@ export default function App() {
                           <div className="mt-2 max-h-64 space-y-2 overflow-y-auto pr-1">
                             {customAnalysisResult.detectionDebug.nodeEvidence.map((nodeEvidence) => {
                               const flowNode = FIXED_TREE_FLOW_NODES.find((node) =>
-                                node.data.detectionNodeIds?.includes(nodeEvidence.nodeId),
+                                node.data.kind !== 'category' && node.data.detectionNodeIds?.includes(nodeEvidence.nodeId),
                               );
                               const nodeLabel = typeof flowNode?.data?.label === 'string' ? flowNode.data.label : nodeEvidence.nodeId;
                               return (
@@ -1084,6 +1163,10 @@ export default function App() {
                 <div className="flex items-center gap-1.5">
                   <span className="w-2.5 h-2.5 rounded bg-slate-700" />
                   <span>未開放 (ロック中)</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="flex h-4 w-4 items-center justify-center rounded-full border-2 border-cyan-400 text-[6px] font-black text-cyan-200">2</span>
+                  <span>外周リング：ノードEXP / LV</span>
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-slate-800/80 pt-2.5 text-xs text-slate-400">
