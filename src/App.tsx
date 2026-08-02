@@ -1047,6 +1047,13 @@ export default function App() {
               <SkillNodeDetailPanel
                 nodeId={selectedNode.id}
                 nodeData={selectedNode.data as unknown as SkillNodeData}
+                evidence={(
+                  (selectedNode.data as unknown as SkillNodeData).detectionNodeIds ?? [selectedNode.id]
+                ).flatMap((detectionNodeId) =>
+                  customAnalysisResult?.detectionDebug?.nodeEvidence.find(
+                    (nodeEvidence) => nodeEvidence.nodeId === detectionNodeId,
+                  )?.matches ?? []
+                )}
                 onClose={() => setSelectedNodeId(null)}
               />
             )}

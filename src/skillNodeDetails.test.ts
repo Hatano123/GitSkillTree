@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { SKILL_NODE_DETAILS, getSkillNodeDetail } from './skillNodeDetails.ts';
+import { NODE_SIGNATURES } from './detectNodes.ts';
+import { SKILL_NODE_DETAILS, getDetectionDisplayConditions, getSkillNodeDetail } from './skillNodeDetails.ts';
 
 test('MVP exposes details for exactly five skill nodes', () => {
   assert.deepEqual(
@@ -15,5 +16,23 @@ test('each MVP detail has three project ideas and related nodes', () => {
     assert.ok(detail.detectionConditions.length > 0);
     assert.ok(detail.relatedNodeIds.length > 0);
     assert.equal(getSkillNodeDetail(detail.nodeId), detail);
+  }
+});
+
+test('detail conditions come from the common node signatures', () => {
+  const mapping = {
+    'frontend-react': 'react',
+    'backend-fastapi': 'fastapi',
+    'infra-docker': 'docker',
+    'ai-pytorch': 'pytorch',
+    'network-http': 'http',
+  } as const;
+
+  for (const [nodeId, detectionNodeId] of Object.entries(mapping)) {
+    assert.deepEqual(
+      SKILL_NODE_DETAILS[nodeId].detectionConditions,
+      getDetectionDisplayConditions(detectionNodeId),
+    );
+    assert.ok(NODE_SIGNATURES.some((signature) => signature.nodeId === detectionNodeId));
   }
 });

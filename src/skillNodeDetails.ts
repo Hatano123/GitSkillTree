@@ -1,3 +1,16 @@
+import { NODE_SIGNATURES } from './detectNodes.ts';
+
+export function getDetectionDisplayConditions(nodeId: string): string[] {
+  const signature = NODE_SIGNATURES.find((candidate) => candidate.nodeId === nodeId);
+  if (!signature) return [];
+  if (signature.always) return ['すべてのスキャンで常時開放されます。'];
+  return [
+    ...(signature.languages ?? []).map((language) => `主要言語またはソースファイル: ${language}`),
+    ...(signature.dependencies ?? []).map((dependency) => `依存関係: ${dependency}`),
+    ...(signature.files ?? []).map((file) => `専用ファイル: ${file}`),
+  ];
+}
+
 export type SkillNodeDetail = {
   nodeId: string;
   description: string;
@@ -10,10 +23,7 @@ export const SKILL_NODE_DETAILS: Record<string, SkillNodeDetail> = {
   'frontend-react': {
     nodeId: 'frontend-react',
     description: 'コンポーネント単位でUIを構築するJavaScriptライブラリです。',
-    detectionConditions: [
-      'package.json の dependencies または devDependencies に react が含まれる',
-      '.jsx / .tsx ファイルで React コンポーネントが実装されている',
-    ],
+    detectionConditions: getDetectionDisplayConditions('react'),
     projectIdeas: [
       'Todoアプリ',
       'GitHub API表示アプリ',
@@ -24,10 +34,7 @@ export const SKILL_NODE_DETAILS: Record<string, SkillNodeDetail> = {
   'backend-fastapi': {
     nodeId: 'backend-fastapi',
     description: 'Pythonで型安全かつ高速なAPIを構築するWebフレームワークです。',
-    detectionConditions: [
-      'requirements.txt または pyproject.toml に fastapi が含まれる',
-      'Pythonコードで FastAPI を生成し、APIルートを定義している',
-    ],
+    detectionConditions: getDetectionDisplayConditions('fastapi'),
     projectIdeas: [
       'タスク管理REST API',
       '画像アップロードAPI',
@@ -38,10 +45,7 @@ export const SKILL_NODE_DETAILS: Record<string, SkillNodeDetail> = {
   'infra-docker': {
     nodeId: 'infra-docker',
     description: 'アプリケーションと依存環境を再現可能なコンテナとしてまとめる技術です。',
-    detectionConditions: [
-      'リポジトリに Dockerfile が含まれる',
-      'コンテナのビルドまたは起動構成が記述されている',
-    ],
+    detectionConditions: getDetectionDisplayConditions('docker'),
     projectIdeas: [
       'Webアプリのコンテナ化',
       '開発環境のDocker Compose化',
@@ -52,10 +56,7 @@ export const SKILL_NODE_DETAILS: Record<string, SkillNodeDetail> = {
   'ai-pytorch': {
     nodeId: 'ai-pytorch',
     description: '柔軟なモデル構築と学習処理に使われる深層学習フレームワークです。',
-    detectionConditions: [
-      'requirements.txt または pyproject.toml に torch が含まれる',
-      'Pythonコードで torch を使ったモデルまたは学習処理が実装されている',
-    ],
+    detectionConditions: getDetectionDisplayConditions('pytorch'),
     projectIdeas: [
       '画像分類モデル',
       '手書き数字認識アプリ',
@@ -66,10 +67,7 @@ export const SKILL_NODE_DETAILS: Record<string, SkillNodeDetail> = {
   'network-http': {
     nodeId: 'network-http',
     description: 'Web上でクライアントとサーバーが要求・応答を交換する通信プロトコルです。',
-    detectionConditions: [
-      'HTTPクライアントまたはWebサーバーを利用するコードが含まれる',
-      'APIエンドポイントやHTTPメソッドを扱う実装が含まれる',
-    ],
+    detectionConditions: getDetectionDisplayConditions('http'),
     projectIdeas: [
       'HTTPリクエスト確認ツール',
       'シンプルなWeb APIクライアント',

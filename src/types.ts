@@ -22,7 +22,6 @@ export interface SkillNodeData {
   category: SkillCategory;
   description: string;
   iconName: string;
-  // Fixed-tree definitions remain available as data, but are not rendered by the main UI.
   status?: SkillNodeStatus;
   layer?: number;
   recommended?: boolean;
