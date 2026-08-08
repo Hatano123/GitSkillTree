@@ -9,31 +9,6 @@
   }
 }
 
-/* Keep the result sidebar readable without enlarging the skill-tree canvas. */
-.result-sidebar-readable .text-\[9px\] {
-  font-size: 11.7px !important;
-}
-
-.result-sidebar-readable .text-\[10px\] {
-  font-size: 13px !important;
-}
-
-.result-sidebar-readable .text-xs {
-  font-size: 0.975rem !important;
-}
-
-.result-sidebar-readable .text-sm {
-  font-size: 1.1375rem !important;
-}
-
-.result-sidebar-readable .text-base {
-  font-size: 1.3rem !important;
-}
-
-.result-sidebar-readable .text-3xl {
-  font-size: 2.4375rem !important;
-}
-
 @keyframes pulse-glow {
   0%, 100% {
     opacity: 1;

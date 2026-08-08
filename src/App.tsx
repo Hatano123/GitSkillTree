@@ -16,7 +16,7 @@ import '@xyflow/react/dist/style.css';
 
 import { 
   GitBranch, Sparkles, Terminal, ArrowRight, 
-  Compass, ChevronLeft, Info, Award, AlertCircle, Share2, TrendingUp
+  Compass, ChevronLeft, Info, Award, AlertCircle, Share2, TrendingUp, PanelLeftOpen, X
 } from 'lucide-react';
 
 import CustomNode from './CustomNode';
@@ -133,6 +133,8 @@ export default function App() {
   const [isDemoGrowthActive, setIsDemoGrowthActive] = useState(false);
   const [isScoreBreakdownOpen, setIsScoreBreakdownOpen] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isLegendOpen, setIsLegendOpen] = useState(false);
 
   // Flow State
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
@@ -143,7 +145,11 @@ export default function App() {
   );
 
   useEffect(() => {
-    if (screen !== 'result') setSelectedNodeId(null);
+    if (screen !== 'result') {
+      setSelectedNodeId(null);
+      setIsSidebarOpen(true);
+      setIsLegendOpen(false);
+    }
   }, [screen]);
 
   // 1. URL ID Param check on mount
@@ -860,7 +866,7 @@ export default function App() {
         <main className="flex-1 flex flex-col lg:flex-row relative z-10 min-h-[calc(100vh-73px)]">
           
           {/* Left panel: Aptitude Radar Chart */}
-          <section className="result-sidebar-readable w-full lg:w-96 border-r border-slate-900 bg-slate-950/40 backdrop-blur-xl p-6 flex flex-col justify-between shrink-0 overflow-y-auto max-h-[calc(100vh-73px)]">
+          <section className={`result-sidebar-readable w-full lg:flex lg:w-80 border-r border-slate-900 bg-slate-950/40 backdrop-blur-xl p-4 lg:p-5 flex-col justify-between shrink-0 overflow-y-auto max-h-[calc(100vh-73px)] ${isSidebarOpen ? 'flex' : 'hidden'}`}>
             
             <div className="space-y-6">
               
@@ -885,6 +891,15 @@ export default function App() {
                       成長差分を試す(再スキャン)
                     </button>
                   )}
+                  <button
+                    type="button"
+                    onClick={() => setIsSidebarOpen(false)}
+                    className="lg:hidden flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-[11px] font-bold text-slate-200 transition-colors hover:bg-slate-800"
+                    aria-label="Close sidebar"
+                  >
+                    <X className="h-4 w-4" />
+                    Close
+                  </button>
                 </div>
                 
                 <div className="bg-slate-900/60 border border-slate-900 px-3.5 py-2.5 rounded-xl flex items-center gap-3 text-xs overflow-hidden">
@@ -1109,7 +1124,18 @@ export default function App() {
           </section>
 
           {/* Right panel: React Flow Canvas */}
-          <section className="flex-1 min-h-[400px] lg:min-h-0 relative bg-[#0b0f19]">
+          <section className="flex-1 min-h-[calc(100vh-73px)] lg:min-h-0 relative bg-[#0b0f19]">
+            {!isSidebarOpen && (
+              <button
+                type="button"
+                onClick={() => setIsSidebarOpen(true)}
+                className="absolute left-3 top-3 z-40 inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-950/95 px-3 py-2 text-xs font-bold text-slate-200 shadow-lg backdrop-blur transition-colors hover:bg-slate-800 lg:hidden"
+                aria-label="サイドパネルを開く"
+              >
+                <PanelLeftOpen className="h-4 w-4" />
+                情報
+              </button>
+            )}
             <ReactFlow
               nodes={nodes}
               edges={edges}
@@ -1145,9 +1171,26 @@ export default function App() {
             )}
 
             {/* Tree Map Legend */}
-            <div className="absolute bottom-4 left-4 right-4 lg:right-auto bg-slate-950/90 border border-slate-900 backdrop-blur-md p-4 rounded-xl shadow-2xl text-sm space-y-3 z-30 max-w-2xl">
+            {!isLegendOpen && (
+              <button
+                type="button"
+                onClick={() => setIsLegendOpen(true)}
+                className="absolute bottom-3 left-3 z-30 rounded-lg border border-slate-800 bg-slate-950/90 px-3 py-2 text-xs font-bold text-slate-300 shadow-xl backdrop-blur-md lg:hidden"
+              >
+                Legend
+              </button>
+            )}
+            <div className={`${isLegendOpen ? 'block' : 'hidden lg:block'} absolute bottom-3 left-3 right-3 lg:bottom-4 lg:left-4 lg:right-auto bg-slate-950/90 border border-slate-900 backdrop-blur-md p-2.5 rounded-lg shadow-2xl text-xs space-y-2 z-30 max-w-xl`}>
+              <button
+                type="button"
+                onClick={() => setIsLegendOpen(false)}
+                className="absolute right-2 top-2 rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-white lg:hidden"
+                aria-label="Close legend"
+              >
+                <X className="h-4 w-4" />
+              </button>
               <h4 className="text-sm font-bold uppercase tracking-wide text-white">スキルマップの凡例</h4>
-              <div className="flex flex-wrap items-center gap-4 text-slate-400">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-slate-400">
                 <div className="flex items-center gap-1.5">
                   <span className="w-2.5 h-2.5 rounded bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
                   <span>取得済み</span>
@@ -1169,7 +1212,7 @@ export default function App() {
                   <span>外周リング：ノードEXP / LV</span>
                 </div>
               </div>
-              <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-slate-800/80 pt-2.5 text-xs text-slate-400">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-slate-800/80 pt-2 text-[11px] text-slate-400">
                 <div className="flex items-center gap-2">
                   <span className="block h-px w-8 bg-slate-500" />
                   <span>実線：技術の関連</span>
