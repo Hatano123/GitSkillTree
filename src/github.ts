@@ -1,3 +1,5 @@
+import type { RecentGithubEvent } from './types';
+
 export interface UserMetadata {
   username: string;
   avatarUrl: string;
@@ -29,12 +31,7 @@ export interface UserMetadata {
     dependencies: string[];
     files: string[];
   }[];
-  recentEvents: {
-    type: string;
-    repoName: string;
-    createdAt: string;
-    commits: string[];
-  }[];
+  recentEvents: RecentGithubEvent[];
 }
 
 interface GitHubTreeItem {
@@ -160,9 +157,15 @@ export function parseManifestDependencies(path: string, content: string): string
 }
 
 /** Keep recent activity while using spare slots to cover different languages. */
-export function selectDetailedRepositories(repositories: UserMetadata['repositories']): UserMetadata['repositories'] {
+export function selectDetailedRepositories(
+  repositories: UserMetadata['repositories'],
+  sinceTimestamp?: string,
+): UserMetadata['repositories'] {
+  const baseline = sinceTimestamp ? Date.parse(sinceTimestamp) : Number.NaN;
   const sorted = repositories
-    .filter((repository) => !repository.fork)
+    .filter((repository) => !repository.fork && (
+      !Number.isFinite(baseline) || Date.parse(repository.updatedAt) > baseline
+    ))
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || left.name.localeCompare(right.name));
   const selected = sorted.slice(0, Math.min(3, DETAILED_REPOSITORY_LIMIT));
   const selectedNames = new Set(selected.map((repository) => repository.name));
@@ -293,7 +296,7 @@ export async function fetchUserMetadata(username: string, sinceTimestamp?: strin
     if (repository.language) aggregatedLanguages[repository.language] = (aggregatedLanguages[repository.language] || 0) + 1;
   }
 
-  const detailedRepositories = selectDetailedRepositories(repositories);
+  const detailedRepositories = selectDetailedRepositories(repositories, sinceTimestamp);
   const inspections: RepositoryInspection[] = [];
   let rateLimited = false;
   for (const repository of detailedRepositories) {

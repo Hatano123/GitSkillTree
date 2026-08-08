@@ -28,6 +28,17 @@ test('detail selection keeps the latest three and adds language diversity', () =
   assert.ok(selected.some((item) => item.name === 'older-cpp'));
 });
 
+test('repeat detail selection inspects only repositories updated after the previous scan', () => {
+  const repository = (name: string, updatedAt: string) => ({ name, language: 'TypeScript', updatedAt, fork: false, description: '', stars: 0, defaultBranch: 'main' });
+  const selected = selectDetailedRepositories([
+    repository('changed', '2026-08-08T02:00:00Z'),
+    repository('same-time', '2026-08-08T01:00:00Z'),
+    repository('older', '2026-08-07T23:00:00Z'),
+  ], '2026-08-08T01:00:00Z');
+
+  assert.deepEqual(selected.map((item) => item.name), ['changed']);
+});
+
 test('scan stays within its request budget, excludes forks, and reads multiple manifests', async () => {
   const originalFetch = globalThis.fetch;
   const urls: string[] = [];
