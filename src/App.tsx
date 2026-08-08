@@ -150,15 +150,20 @@ export default function App() {
     const gitNode = nodes.find((node) => node.id === 'git');
     if (!gitNode) return;
 
-    hasCenteredInitialTree.current = true;
-    const width = gitNode.measured?.width ?? gitNode.width ?? 0;
-    const height = gitNode.measured?.height ?? gitNode.height ?? 0;
-    void flowInstance.setCenter(
-      gitNode.position.x + width / 2,
-      gitNode.position.y + height / 2,
-      { zoom: 0.7, duration: 0 },
-    );
-  }, [screen, nodes, flowInstance]);
+    const frame = window.requestAnimationFrame(() => {
+      if (hasCenteredInitialTree.current) return;
+      hasCenteredInitialTree.current = true;
+      const width = gitNode.measured?.width ?? gitNode.width ?? 0;
+      const height = gitNode.measured?.height ?? gitNode.height ?? 0;
+      void flowInstance.setCenter(
+        gitNode.position.x + width / 2,
+        gitNode.position.y + height / 2,
+        { zoom: 0.7, duration: 0 },
+      );
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [screen, nodes.length, flowInstance]);
 
   useEffect(() => {
     if (screen === 'result') {
