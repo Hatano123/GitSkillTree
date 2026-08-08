@@ -1149,7 +1149,7 @@ export default function App() {
           </section>
 
           {/* Right panel: React Flow Canvas */}
-          <section className="flex-1 min-h-[calc(100vh-73px)] lg:min-h-0 relative bg-[#0b0f19]">
+          <section className="relative h-[calc(100dvh-73px)] min-h-[400px] w-full flex-1 overflow-hidden bg-[#0b0f19] lg:h-auto lg:min-h-0">
             {!isSidebarOpen && (
               <button
                 type="button"
