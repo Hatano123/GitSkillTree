@@ -4,7 +4,6 @@ import { defineSecret } from 'firebase-functions/params';
 import { setGlobalOptions } from 'firebase-functions/v2';
 import { buildExplanationPrompt, parseExplanationInput, parseExplanationResponse } from './explanation.js';
 import { fetchGithubApi, parseGithubApiPath } from './githubProxy.js';
-import { executeScanStore, parseScanStoreOperation } from './scanStore.js';
 setGlobalOptions({ region: 'asia-northeast1', maxInstances: 10 });
 const geminiApiKey = defineSecret('GEMINI_API_KEY');
 const githubAppPrivateKey = defineSecret('GITHUB_APP_PRIVATE_KEY');
@@ -66,21 +65,6 @@ export const generateExplanation = onCall({
     catch (error) {
         console.error('Gemini explanation failed.', error);
         throw new HttpsError('internal', '説明文を生成できませんでした。');
-    }
-});
-export const scanStore = onCall({
-    timeoutSeconds: 15,
-    memory: '256MiB',
-}, async (request) => {
-    const operation = parseScanStoreOperation(request.data);
-    if (!operation)
-        throw new HttpsError('invalid-argument', 'スキャン保存の入力が不正です。');
-    try {
-        return await executeScanStore(operation);
-    }
-    catch (error) {
-        console.error('Scan store operation failed.', error);
-        throw new HttpsError('unavailable', 'スキャン結果の保存先に接続できませんでした。');
     }
 });
 //# sourceMappingURL=index.js.map

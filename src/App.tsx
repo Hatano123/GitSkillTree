@@ -48,7 +48,7 @@ const edgeTypes = {
   circular: CircularEdge,
 };
 
-const SCAN_CACHE_DURATION_MS = 24 * 60 * 60 * 1000;
+const SCAN_CACHE_DURATION_MS = 10 * 60 * 1000;
 type AnalysisResultSource = 'fresh' | 'cache' | 'fallback' | null;
 
 const DETECTION_EVIDENCE_LABELS = {
@@ -136,7 +136,6 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isLegendOpen, setIsLegendOpen] = useState(false);
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance | null>(null);
-  const [forceNextScan, setForceNextScan] = useState(false);
 
   // Flow State
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
@@ -290,7 +289,7 @@ export default function App() {
       }
       setTimingLogs(prev => [...prev, { label: LOADING_STEP_LABELS[0], ms: Math.round(performance.now() - t0) }]);
 
-      if (!forceNextScan && prevScanRecord && isScanCacheValid(prevScanRecord)) {
+      if (prevScanRecord && isScanCacheValid(prevScanRecord)) {
         setAvatarUrl(prevScanRecord.avatarUrl);
         setSavedScanId(prevScanRecord.id || null);
         setPreviousScan(null);
@@ -363,8 +362,6 @@ export default function App() {
       }
       setErrorMessage(err.message || '解析中にエラーが発生しました。');
       setScreen('input');
-    } finally {
-      setForceNextScan(false);
     }
   };
 
@@ -420,7 +417,24 @@ export default function App() {
       setIsSidebarOpen(window.matchMedia('(min-width: 1024px)').matches);
       setScreen('result');
       setIsDemoGrowthActive(false);
-      
+
+      saveScan({
+        username: 'chibicode',
+        avatarUrl: 'https://avatars.githubusercontent.com/u/74620?v=4',
+        timestamp: new Date().toLocaleString('ja-JP'),
+        ...currentEvaluation,
+        detectionDebug: currentDebug,
+        growth: currentGrowth,
+        previousScanId: 'baseline-demo-id',
+        customLogs: [
+          '🎉 前回のスキャンから新たに Next.js が導入されました！フロントエンド技術が一段と強化されています。',
+          '🐳 Dockerfileのコミットを検知！インフラノード Docker が新しく解放されました。',
+          'コミット差分により、新たに2つの技術スタックがアンロックされました！素晴らしい成長です！'
+        ]
+      }).then((docId) => {
+        setSavedScanId(docId);
+      });
+
     }, 3100);
   };
 
@@ -485,9 +499,6 @@ export default function App() {
 
       saveScan(scanRecord).then((docId) => {
         setSavedScanId(docId);
-      }).catch((error) => {
-        console.error('Failed to save scan result.', error);
-        setErrorMessage('解析結果を表示していますが、履歴の保存に失敗しました。');
       });
     }, 800);
 
@@ -657,11 +668,6 @@ export default function App() {
     setCustomAnalysisResult(null);
     setAnalysisResultSource(null);
     setScreen('input');
-  };
-
-  const handlePrepareRescan = () => {
-    setForceNextScan(true);
-    handleBackToInput();
   };
 
   return (
@@ -958,7 +964,7 @@ export default function App() {
                     <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                     <p>
                       {analysisResultSource === 'cache'
-                        ? '24時間以内の前回スキャンを表示中です。GitHub API と Gemini API は呼び出していません。'
+                        ? '10分以内の前回スキャンを表示中です。GitHub API と Gemini API は呼び出していません。'
                         : 'API の呼び出しに失敗したため、前回スキャンの結果を表示しています。'}
                     </p>
                   </div>
@@ -969,7 +975,7 @@ export default function App() {
               <GrowthSummaryCard
                 growth={customAnalysisResult?.growth}
                 questLabel={growthQuestLabel}
-                onRescan={handlePrepareRescan}
+                onRescan={handleBackToInput}
               />
 
               {/* Archetype Description */}
