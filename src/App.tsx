@@ -177,6 +177,7 @@ export default function App() {
           }
 
           setTimeout(() => {
+            setIsSidebarOpen(window.matchMedia('(min-width: 1024px)').matches);
             setScreen('result');
           }, 800);
         } else {
@@ -382,6 +383,7 @@ export default function App() {
         ]
       });
 
+      setIsSidebarOpen(window.matchMedia('(min-width: 1024px)').matches);
       setScreen('result');
       setIsDemoGrowthActive(false);
       
@@ -430,6 +432,7 @@ export default function App() {
     if (screen !== 'loading' || !customAnalysisResult) return;
 
     const transitionTimer = setTimeout(() => {
+      setIsSidebarOpen(window.matchMedia('(min-width: 1024px)').matches);
       setScreen('result');
 
       const params = new URLSearchParams(window.location.search);
@@ -1140,6 +1143,7 @@ export default function App() {
               </button>
             )}
             <ReactFlow
+              key={isSidebarOpen ? 'sidebar-open' : 'sidebar-closed'}
               nodes={nodes}
               edges={edges}
               onNodesChange={onNodesChange}
@@ -1150,7 +1154,7 @@ export default function App() {
               onNodeClick={(_, node) => setSelectedNodeId(node.id)}
               connectionLineType={ConnectionLineType.SmoothStep}
               fitView
-              fitViewOptions={{ padding: 0.06, minZoom: 0.45, maxZoom: 1 }}
+              fitViewOptions={{ padding: 0.04, minZoom: 0.6, maxZoom: 1 }}
               minZoom={0.2}
               maxZoom={2}
             >
