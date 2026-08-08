@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer 
 } from 'recharts';
@@ -136,6 +136,7 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isLegendOpen, setIsLegendOpen] = useState(false);
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance | null>(null);
+  const hasCenteredInitialTree = useRef(false);
 
   // Flow State
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
@@ -146,21 +147,22 @@ export default function App() {
   );
 
   useEffect(() => {
-    if (screen !== 'result' || !flowInstance) return;
+    if (screen !== 'result') {
+      hasCenteredInitialTree.current = false;
+      return;
+    }
+    if (!flowInstance || hasCenteredInitialTree.current) return;
     const gitNode = nodes.find((node) => node.id === 'git');
     if (!gitNode) return;
 
-    const frame = window.requestAnimationFrame(() => {
-      const width = gitNode.measured?.width ?? gitNode.width ?? 0;
-      const height = gitNode.measured?.height ?? gitNode.height ?? 0;
-      void flowInstance.setCenter(
-        gitNode.position.x + width / 2,
-        gitNode.position.y + height / 2,
-        { zoom: 0.7, duration: 0 },
-      );
-    });
-
-    return () => window.cancelAnimationFrame(frame);
+    hasCenteredInitialTree.current = true;
+    const width = gitNode.measured?.width ?? gitNode.width ?? 0;
+    const height = gitNode.measured?.height ?? gitNode.height ?? 0;
+    void flowInstance.setCenter(
+      gitNode.position.x + width / 2,
+      gitNode.position.y + height / 2,
+      { zoom: 0.7, duration: 0 },
+    );
   }, [screen, nodes, flowInstance]);
 
   useEffect(() => {
@@ -172,6 +174,18 @@ export default function App() {
       setIsSidebarOpen(true);
       setIsLegendOpen(false);
     }
+  }, [screen]);
+
+  useEffect(() => {
+    if (screen !== 'result') return;
+
+    const desktopViewport = window.matchMedia('(min-width: 1024px)');
+    const handleViewportChange = (event: MediaQueryListEvent) => {
+      if (!event.matches) setIsSidebarOpen(false);
+    };
+
+    desktopViewport.addEventListener('change', handleViewportChange);
+    return () => desktopViewport.removeEventListener('change', handleViewportChange);
   }, [screen]);
 
   // 1. URL ID Param check on mount
@@ -405,7 +419,7 @@ export default function App() {
       setIsSidebarOpen(window.matchMedia('(min-width: 1024px)').matches);
       setScreen('result');
       setIsDemoGrowthActive(false);
-      
+
       saveScan({
         username: 'chibicode',
         avatarUrl: 'https://avatars.githubusercontent.com/u/74620?v=4',
@@ -1149,7 +1163,7 @@ export default function App() {
           </section>
 
           {/* Right panel: React Flow Canvas */}
-          <section className="relative h-[calc(100dvh-73px)] min-h-[400px] w-full flex-1 overflow-hidden bg-[#0b0f19] lg:h-auto lg:min-h-0">
+          <section className="relative h-[calc(100dvh-73px)] min-h-[400px] w-full flex-1 overflow-hidden bg-[#0b0f19]">
             {!isSidebarOpen && (
               <button
                 type="button"
@@ -1161,24 +1175,25 @@ export default function App() {
                 情報
               </button>
             )}
-            <ReactFlow
-              key={isSidebarOpen ? 'sidebar-open' : 'sidebar-closed'}
-              nodes={nodes}
-              edges={edges}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              nodeTypes={nodeTypes}
-              edgeTypes={edgeTypes}
-              nodesDraggable={false}
-              onInit={setFlowInstance}
-              onNodeClick={(_, node) => setSelectedNodeId(node.id)}
-              connectionLineType={ConnectionLineType.SmoothStep}
-              minZoom={0.2}
-              maxZoom={2}
-            >
-              <Background color="#1e293b" gap={20} size={1} />
-              <Controls position="top-right" className="!bg-slate-950 !border-slate-800 !text-slate-300 shadow-2xl [&_button]:!bg-slate-900 [&_button]:!border-slate-800 [&_button]:!text-slate-300 [&_button:hover]:!bg-slate-800" />
-            </ReactFlow>
+            <div className="absolute inset-0">
+              <ReactFlow
+                nodes={nodes}
+                edges={edges}
+                onNodesChange={onNodesChange}
+                onEdgesChange={onEdgesChange}
+                nodeTypes={nodeTypes}
+                edgeTypes={edgeTypes}
+                nodesDraggable={false}
+                onInit={setFlowInstance}
+                onNodeClick={(_, node) => setSelectedNodeId(node.id)}
+                connectionLineType={ConnectionLineType.SmoothStep}
+                minZoom={0.2}
+                maxZoom={2}
+              >
+                <Background color="#1e293b" gap={20} size={1} />
+                <Controls position="top-right" className="!bg-slate-950 !border-slate-800 !text-slate-300 shadow-2xl [&_button]:!bg-slate-900 [&_button]:!border-slate-800 [&_button]:!text-slate-300 [&_button:hover]:!bg-slate-800" />
+              </ReactFlow>
+            </div>
 
             {selectedNode && (
               <SkillNodeDetailPanel
