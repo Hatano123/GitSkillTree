@@ -1,56 +1,120 @@
 # GitSkillTree 🌲
 
-「自分のコードでツリーを埋めろ！次の一手がわかる成長トラッカー」  
-GitHubユーザーネームを入力するだけで、全公開レポジトリの使用言語・依存パッケージ構成をスキャンし、あなたのエンジニア適性を多角形チャート（レーダーチャート）とインタラクティブな円形スキルツリーで可視化するアプリケーションです。
+GitHubに残っている開発記録を、次の学習へ向かう体験に変えるスキル可視化アプリです。
+
+GitHubユーザー名を入力すると、公開リポジトリの言語、依存パッケージ、技術固有ファイルを解析し、検出できた技術をインタラクティブなスキルツリーとして表示します。
+
+**公開デモ:** [https://gitskilltree.web.app/](https://gitskilltree.web.app/)
 
 ---
 
-## 🚀 主要機能
-1. **GitHubプロフィール一括スキャン**:
-   - ユーザーネームを入力するだけで、全公開リポジトリ（最大100件）と言語の統計情報を抽出。
-   - スター数上位のレポジトリから主要なパッケージ構成（`package.json` 等）を自動解析。
-2. **Gemini 2.5 Flash によるスキル分析**:
-   - 抽出したリポジトリメタデータを **Gemini 2.5 Flash API** が詳細にプロファイリング。
-   - 開発者の適性スコア（インフラ、バックエンド、フロントエンド、AI、ネットワーク）を算出します。
-3. **インタラクティブな円形スキルツリー**:
-   - 内側（基礎）から外側（応用・高度技術）へ向かって放射状に広がる、美しい同心円レイアウト。
-   - 習得済みノードは緑に、次におすすめの技術は黄色（点滅アニメーション）で表示され、マウスホバーで技術の詳細解説を確認できます。
-4. **Firebaseデータ管理**:
-   - 解析結果は Firebase Firestore に自動で同期・保存され、一意なスキャンIDが発行されます。
+## 主な機能
+
+### GitHubリポジトリ解析
+
+- 公開リポジトリを最大100件取得
+- フォークを除外し、選定した最大8件を詳細解析
+- 主要言語、依存パッケージ、技術固有ファイルから使用技術を判定
+- GitHub APIの残量を考慮し、取得済みの部分結果を保持
+
+### 根拠を重視した技術検出
+
+ノードの解除は、次の強い証拠だけを使用する決定的なルールで行います。
+
+- GitHubが返す主要言語との完全一致
+- マニフェストに記載された依存パッケージとの完全一致
+- 技術固有ファイルとの一致
+- 言語に対応するソースファイル
+
+リポジトリ名、説明、README、関連ノード、AIの推測は検出根拠に使用しません。Gitノードはすべての解析で解除されます。
+
+### インタラクティブなスキルツリー
+
+- 習得済み、今回新しく解除、おすすめ、未解除を色と線で表示
+- ノードごとのEXPとレベルを表示
+- ドラッグ、ズーム、ノード詳細表示に対応
+- 初回表示ではGitノードを中心に表示
+- 狭い画面では左パネルを自動的に閉じ、ツリーの表示領域を確保
+
+### 成長・差分表示
+
+- 解析結果と成長状態をCloud Firestoreへ保存
+- 同じGitHubユーザーの前回結果を読み込み、今回新しく検出された技術を表示
+- 前回解析時刻以降に更新されたリポジトリを優先して詳細解析
+- 公開GitHub Eventsから前回解析後の活動を取得
+- 技術ごとのEXP、レベル、スキャン回数を継続
+
+> 差分解析は公開情報を対象とします。GitHub Eventsは直近30件までのため、すべての活動を完全に取得するものではありません。
+
+### AIによる説明生成
+
+決定的なルールで算出した検出結果をもとに、Geminiが説明文を生成します。AIは技術検出やノード解除の判定には使用しません。
 
 ---
 
-## 📸 画面紹介
+## 画面
 
-### ① ホーム画面 (ユーザー入力 / 解析中)
-シンプルなUIでGitHubユーザー名の入力を受け付け、解析を実行します。
+### ホーム画面
+
+GitHubユーザー名を入力して解析を開始します。
+
 ![ホーム画面](image/HOME.png)
 
-### ② 結果表示画面 (適性チャート & スキルツリー)
-左側にレーダーチャートとAIによる詳細な分析コメント、右側にドラッグ・ズーム可能な円形スキルツリーが表示されます。
-![結果表示画面](image/SKILLTREE.png)
+### 解析結果
+
+技術傾向、成長フィードバック、インタラクティブなスキルツリーを表示します。
+
+![スキルツリー](image/SKILLTREE.png)
 
 ---
 
-## 🛠️ 環境構築・起動方法
+## システム構成
 
-### 前提条件
-- **Node.js**: v18.0.0 以上 (Vite 8 の動作要件)
-- **npm**: v9.0.0 以上
+- ブラウザからのGitHub APIリクエストは、Firebase Functionsの`githubApi`を経由
+- Geminiの説明生成は、Firebase Functionsの`generateExplanation`を経由
+- Gemini APIキーとGitHub App秘密鍵はFirebase Secret Managerで管理
+- 解析履歴と成長状態はCloud Firestoreの`scans`コレクションへ保存
+- フロントエンドはFirebase Hostingで配信
+- Functionsのリージョンは`asia-northeast1`
+
+ブラウザへGemini APIキーやGitHub App秘密鍵を配布しない構成です。
 
 ---
 
-### 1. 依存パッケージのインストール
-プロジェクトのルートディレクトリで以下を実行し、依存パッケージをインストールします。
+## 技術スタック
+
+- **フロントエンド:** React 19、TypeScript、Vite 8
+- **スタイリング:** Tailwind CSS 4
+- **スキルツリー:** React Flow (`@xyflow/react`)
+- **チャート:** Recharts
+- **アイコン:** Lucide React、React Icons
+- **バックエンド:** Firebase Functions v2 / Node.js 22
+- **データベース:** Cloud Firestore
+- **AI:** Google Gemini (`gemini-3.1-flash-lite`)
+- **ホスティング:** Firebase Hosting
+- **テスト:** Node.js Test Runner、検出ハーネス
+- **Lint:** Oxlint
+
+---
+
+## ローカル開発
+
+### 必要環境
+
+- Node.js 22 推奨
+- npm
+- Firebaseプロジェクト
+
+### セットアップ
+
 ```bash
 npm install
+npm --prefix functions install
 ```
 
-### 2. 環境変数の設定
-ルートディレクトリに `.env` ファイルを作成（または `.env.example` からコピー）し、各種APIキーや構成情報を記述します。
+ルートに`.env`を作成し、Webアプリ用のFirebase公開設定を記述します。
 
 ```env
-# Firebase Configuration (Firebase Console > プロジェクト設定 から取得)
 VITE_FIREBASE_API_KEY="YOUR_FIREBASE_API_KEY"
 VITE_FIREBASE_AUTH_DOMAIN="YOUR_FIREBASE_AUTH_DOMAIN"
 VITE_FIREBASE_PROJECT_ID="YOUR_FIREBASE_PROJECT_ID"
@@ -58,63 +122,83 @@ VITE_FIREBASE_STORAGE_BUCKET="YOUR_FIREBASE_STORAGE_BUCKET"
 VITE_FIREBASE_MESSAGING_SENDER_ID="YOUR_FIREBASE_MESSAGING_SENDER_ID"
 VITE_FIREBASE_APP_ID="YOUR_FIREBASE_APP_ID"
 VITE_FIREBASE_MEASUREMENT_ID="YOUR_FIREBASE_MEASUREMENT_ID"
-
-# Gemini API Key (Google AI Studio から取得)
-VITE_GEMINI_API_KEY="YOUR_GEMINI_API_KEY"
 ```
-*※注: `.env` はセキュリティのため、Gitリポジトリにはコミットされません。実際のAPI情報を公開リポジトリへ登録しないようご注意ください。*
 
----
+`GEMINI_API_KEY`と`GITHUB_APP_PRIVATE_KEY`はフロントエンドの`.env`へ置かず、Firebase FunctionsのSecretとして管理します。
 
-### 3. 各種コマンド
+### 起動
 
-#### 開発用サーバーの起動
-ローカル開発サーバーを起動します（デフォルトでは `http://localhost:5173` で起動します）。
 ```bash
 npm run dev
 ```
 
-#### 本番用ビルドの生成
-プロジェクトを本番用にコンパイルおよびビルドします。成果物は `dist/` ディレクトリに出力されます。
+通常は[http://localhost:5173](http://localhost:5173)で起動します。
+
+### テスト・品質確認
+
+```bash
+# ソーステスト
+npm test
+
+# ノード検出ハーネス
+npm run harness:test
+
+# テスト、検出ハーネス、Lint、ビルドを一括実行
+npm run harness
+
+# Functions
+npm --prefix functions test
+npm --prefix functions run build
+```
+
+公開リポジトリを使って検出結果を調査する場合は、リクエスト上限を管理する専用コマンドを使用します。
+
+```bash
+npm run harness:scan -- <GitHubユーザー名>
+```
+
+---
+
+## ビルドとデプロイ
+
+### フロントエンドのビルド
+
 ```bash
 npm run build
 ```
 
-#### ビルド成果物のローカルプレビュー
-本番用にビルドされた `dist/` ディレクトリの成果物をローカル環境で起動・テストします。
+生成物は`dist/`へ出力されます。
+
+### Hostingのみデプロイ
+
 ```bash
-npm run preview
+npx -y firebase-tools@latest deploy --only hosting
 ```
 
----
+### Functionsのみデプロイ
 
-### 4. Firebase Hosting へのデプロイ
+```bash
+npx -y firebase-tools@latest deploy --only functions
+```
 
-ビルドした静的ファイルを Firebase Hosting にデプロイする場合は、以下の手順を実行します。
+### HostingとFunctionsをまとめてデプロイ
 
-1. **Firebase CLI のセットアップ**
-   ```bash
-   npx firebase login
-   ```
+```bash
+npm run build
+npx -y firebase-tools@latest deploy --only hosting,functions
+```
 
-2. **プロジェクトの紐付け** (まだの場合)
-   ```bash
-   npx firebase use --add
-   ```
-
-3. **ビルドしてデプロイ**
-   ```bash
-   npm run build
-   npx firebase deploy
-   ```
+HostingのデプロイだけではFunctionsの変更は反映されません。
 
 ---
 
-## 🧬 技術スタック
-- **フロントエンド**: React (Vite) + TypeScript
-- **スタイリング**: Tailwind CSS (v4)
-- **アイコン**: lucide-react
-- **多角形チャート**: recharts
-- **インタラクティブ・スキルツリー**: @xyflow/react (React Flow)
-- **AIエンジン**: Google Gemini API (`gemini-2.5-flash`)
-- **データベース & ホスティング**: Firebase (Firestore)
+## 現在の制約
+
+- 公開リポジトリのみ解析対象
+- リポジトリ取得は最大100件、詳細解析は最大8件
+- GitHub Eventsは直近30件まで
+- 大きなリポジトリではGitHubのTree APIが一部を省略する場合がある
+- 技術傾向チャートはGitHub上で検出できた技術の相対分布であり、能力値や習熟度の断定ではない
+- スマートフォンでも表示できますが、快適な操作にはPCを推奨
+
+検出数を増やすことより、根拠を確認できる正しい検出を優先しています。
