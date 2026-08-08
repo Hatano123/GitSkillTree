@@ -1151,10 +1151,23 @@ export default function App() {
               nodeTypes={nodeTypes}
               edgeTypes={edgeTypes}
               nodesDraggable={false}
+              onInit={(instance) => {
+                window.requestAnimationFrame(() => {
+                  const gitNode = instance.getNode('git');
+                  if (!gitNode) return;
+                  const width = gitNode.measured?.width ?? gitNode.width ?? 0;
+                  const height = gitNode.measured?.height ?? gitNode.height ?? 0;
+                  void instance.setCenter(
+                    gitNode.position.x + width / 2,
+                    gitNode.position.y + height / 2,
+                    { zoom: 0.7, duration: 0 },
+                  );
+                });
+              }}
               onNodeClick={(_, node) => setSelectedNodeId(node.id)}
               connectionLineType={ConnectionLineType.SmoothStep}
               fitView
-              fitViewOptions={{ padding: 0.04, minZoom: 1, maxZoom: 1 }}
+              fitViewOptions={{ padding: 0.04, minZoom: 0.7, maxZoom: 0.7 }}
               minZoom={0.2}
               maxZoom={2}
             >
