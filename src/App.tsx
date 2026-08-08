@@ -11,7 +11,7 @@ import {
   ConnectionLineType,
   MarkerType
 } from '@xyflow/react';
-import type { Node, Edge } from '@xyflow/react';
+import type { Node, Edge, ReactFlowInstance } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
 import { 
@@ -135,6 +135,7 @@ export default function App() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isLegendOpen, setIsLegendOpen] = useState(false);
+  const [flowInstance, setFlowInstance] = useState<ReactFlowInstance | null>(null);
 
   // Flow State
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
@@ -143,6 +144,24 @@ export default function App() {
     () => nodes.find((node) => node.id === selectedNodeId) ?? null,
     [nodes, selectedNodeId],
   );
+
+  useEffect(() => {
+    if (screen !== 'result' || !flowInstance) return;
+    const gitNode = nodes.find((node) => node.id === 'git');
+    if (!gitNode) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      const width = gitNode.measured?.width ?? gitNode.width ?? 0;
+      const height = gitNode.measured?.height ?? gitNode.height ?? 0;
+      void flowInstance.setCenter(
+        gitNode.position.x + width / 2,
+        gitNode.position.y + height / 2,
+        { zoom: 0.7, duration: 0 },
+      );
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [screen, nodes, flowInstance]);
 
   useEffect(() => {
     if (screen === 'result') {
@@ -1151,19 +1170,7 @@ export default function App() {
               nodeTypes={nodeTypes}
               edgeTypes={edgeTypes}
               nodesDraggable={false}
-              onInit={(instance) => {
-                window.requestAnimationFrame(() => {
-                  const gitNode = instance.getNode('git');
-                  if (!gitNode) return;
-                  const width = gitNode.measured?.width ?? gitNode.width ?? 0;
-                  const height = gitNode.measured?.height ?? gitNode.height ?? 0;
-                  void instance.setCenter(
-                    gitNode.position.x + width / 2,
-                    gitNode.position.y + height / 2,
-                    { zoom: 0.7, duration: 0 },
-                  );
-                });
-              }}
+              onInit={setFlowInstance}
               onNodeClick={(_, node) => setSelectedNodeId(node.id)}
               connectionLineType={ConnectionLineType.SmoothStep}
               minZoom={0.2}
