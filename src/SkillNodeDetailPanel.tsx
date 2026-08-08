@@ -1,4 +1,4 @@
-import { CheckCircle2, Lightbulb, LockKeyhole, Search, Sparkles, X } from 'lucide-react';
+import { CheckCircle2, Lightbulb, LockKeyhole, Search, Sparkles, X, Zap } from 'lucide-react';
 import { FIXED_TREE_FLOW_NODES } from './skillTree';
 import { getSkillNodeDetail } from './skillNodeDetails';
 import type { DetectionEvidenceMatch, SkillNodeData, SkillNodeStatus } from './types';
@@ -97,6 +97,27 @@ export default function SkillNodeDetailPanel({
               {statusStyle.label}
             </span>
           </div>
+
+          {typeof nodeData.exp === 'number' && nodeData.level && (
+            <section className="rounded-2xl border border-cyan-500/25 bg-gradient-to-r from-cyan-500/10 to-indigo-500/10 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-cyan-200">
+                  <Zap className="h-4 w-4" />
+                  <span className="text-xs font-black uppercase tracking-wider">Node EXP</span>
+                </div>
+                <span className="font-mono text-sm font-black text-white">LV.{nodeData.level} · {nodeData.exp} EXP</span>
+              </div>
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-900">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-cyan-400 transition-all duration-700"
+                  style={{ width: `${nodeData.expProgress ?? 0}%` }}
+                />
+              </div>
+              <p className="mt-2 text-[11px] leading-5 text-slate-500">
+                この技術が別の公開リポジトリでも確認されると+10 EXP。同じリポジトリは1回だけです。
+              </p>
+            </section>
+          )}
 
           <section>
             <h3 className="mb-2 text-sm font-black uppercase tracking-wider text-slate-300">

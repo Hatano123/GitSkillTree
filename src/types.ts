@@ -15,6 +15,23 @@ export interface DetectionDebugInfo {
   nodeEvidence: { nodeId: string; matches: DetectionEvidenceMatch[] }[];
 }
 
+export interface NodeExpProgress {
+  exp: number;
+  level: 1 | 2 | 3;
+  repositoryKeys: string[];
+  lastGainedExp: number;
+}
+
+export interface GrowthSnapshot {
+  version: 'node-exp-v2';
+  totalExp: number;
+  gainedExp: number;
+  scanCount: number;
+  nodeProgress: Record<string, NodeExpProgress>;
+  newNodeIds: string[];
+  leveledUpNodeIds: string[];
+}
+
 export interface SkillNodeData {
   [key: string]: unknown;
   label: string;
@@ -27,6 +44,10 @@ export interface SkillNodeData {
   recommended?: boolean;
   kind?: 'skill' | 'category' | 'hub';
   detectedCount?: number;
+  exp?: number;
+  level?: 1 | 2 | 3;
+  expProgress?: number;
+  gainedExp?: number;
   onClick?: () => void;
   detectionNodeIds?: string[];
 }
@@ -74,6 +95,7 @@ export interface ScanRecord {
   evaluationVersion?: string;
   dataStatus?: 'insufficient' | 'limited' | 'available';
   detectionDebug?: DetectionDebugInfo;
+  growth?: GrowthSnapshot;
   acquiredNodeIds: string[];
   recommendedNodeIds: string[];
   unlockedNodeIds: string[];
