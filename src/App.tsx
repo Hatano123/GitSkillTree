@@ -1150,7 +1150,7 @@ export default function App() {
               onNodeClick={(_, node) => setSelectedNodeId(node.id)}
               connectionLineType={ConnectionLineType.SmoothStep}
               fitView
-              fitViewOptions={{ padding: 0.15 }}
+              fitViewOptions={{ padding: 0.06, minZoom: 0.45, maxZoom: 1 }}
               minZoom={0.2}
               maxZoom={2}
             >
