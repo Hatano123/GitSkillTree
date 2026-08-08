@@ -145,7 +145,10 @@ export default function App() {
   );
 
   useEffect(() => {
-    if (screen !== 'result') {
+    if (screen === 'result') {
+      setIsSidebarOpen(window.matchMedia('(min-width: 1024px)').matches);
+      setIsLegendOpen(false);
+    } else {
       setSelectedNodeId(null);
       setIsSidebarOpen(true);
       setIsLegendOpen(false);

@@ -91,12 +91,14 @@ function rateLimitMessage(state: RateLimitState): string {
 }
 
 async function githubFetch(url: string, state: RateLimitState): Promise<Response> {
-  const response = await fetch(url, {
-    headers: {
-      Accept: 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2026-03-10',
-    },
-  });
+  const response = typeof window === 'undefined'
+    ? await fetch(url, {
+      headers: {
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2026-03-10',
+      },
+    })
+    : await (await import('./githubProxy.ts')).githubApiFetch(url);
   updateRateLimitState(response, state);
   return response;
 }
