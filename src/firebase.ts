@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAnalytics } from 'firebase/analytics';
 import { 
-  getFirestore, collection, addDoc, getDocs, doc, getDoc, query, where, orderBy, limit 
+  getFirestore, collection, addDoc, getDocs, doc, getDoc, query, where, orderBy, limit
 } from 'firebase/firestore';
 import type { ScanRecord } from './types';
 
@@ -30,14 +30,16 @@ if (typeof window !== 'undefined' && firebaseConfig.measurementId) {
 
 export { app, db, analytics };
 
+function normalizeGithubUsername(username: string): string {
+  return username.trim().toLowerCase();
+}
+
 export async function saveScan(scan: Omit<ScanRecord, 'id'>): Promise<string> {
-  try {
-    const docRef = await addDoc(collection(db, 'scans'), scan);
-    return docRef.id;
-  } catch (e) {
-    console.error("Error adding document to Firestore: ", e);
-    return 'local-dummy-' + Date.now();
-  }
+  const docRef = await addDoc(collection(db, 'scans'), {
+    ...scan,
+    username: normalizeGithubUsername(scan.username),
+  });
+  return docRef.id;
 }
 
 export async function getScanById(id: string): Promise<ScanRecord | null> {
@@ -54,22 +56,25 @@ export async function getScanById(id: string): Promise<ScanRecord | null> {
 }
 
 export async function getLatestScanByUsername(username: string): Promise<ScanRecord | null> {
-  try {
-    const q = query(
+  const trimmedUsername = username.trim();
+  const normalizedUsername = normalizeGithubUsername(trimmedUsername);
+  const usernames = normalizedUsername === trimmedUsername
+    ? [normalizedUsername]
+    : [normalizedUsername, trimmedUsername];
+  const records: ScanRecord[] = [];
+
+  for (const candidate of usernames) {
+    const snapshot = await getDocs(query(
       collection(db, 'scans'),
-      where('username', '==', username.trim()),
-      orderBy('timestamp', 'desc'),
-      limit(1)
-    );
-    const querySnapshot = await getDocs(q);
-    if (!querySnapshot.empty) {
-      const docSnap = querySnapshot.docs[0];
-      return { id: docSnap.id, ...docSnap.data() } as ScanRecord;
-    }
-  } catch (e) {
-    console.error("Error querying latest scan for user:", e);
+      where('username', '==', candidate),
+    ));
+    snapshot.forEach((document) => {
+      records.push({ id: document.id, ...document.data() } as ScanRecord);
+    });
+    if (records.length > 0) break;
   }
-  return null;
+
+  return records.sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp))[0] ?? null;
 }
 
 export async function getRecentScans(limitCount = 5): Promise<ScanRecord[]> {

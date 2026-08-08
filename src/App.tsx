@@ -32,7 +32,7 @@ import { generateExplanationWithGemini } from './gemini';
 import type { AnalysisResult } from './gemini';
 import { EVALUATION_VERSION, evaluateNodes, fallbackExplanation } from './evaluation';
 import { advanceNodeGrowth, GROWTH_VERSION, nodeExpProgressPercent } from './growth';
-import type { DetectionDebugInfo, ScanRecord, SkillNodeData } from './types';
+import type { DetectionDebugInfo, RecentGithubEvent, ScanRecord, SkillNodeData } from './types';
 
 const GithubIcon = () => (
   <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -48,8 +48,7 @@ const edgeTypes = {
   circular: CircularEdge,
 };
 
-const SCAN_CACHE_DURATION_MS = 10 * 60 * 1000;
-type AnalysisResultSource = 'fresh' | 'cache' | 'fallback' | null;
+type AnalysisResultSource = 'fresh' | 'fallback' | null;
 
 const DETECTION_EVIDENCE_LABELS = {
   always: '常時開放',
@@ -100,11 +99,6 @@ function toAnalysisResult(scan: ScanRecord): AnalysisResult {
   };
 }
 
-function isScanCacheValid(scan: ScanRecord): boolean {
-  const timestamp = new Date(scan.timestamp).getTime();
-  return Number.isFinite(timestamp) && Date.now() - timestamp >= 0 && Date.now() - timestamp < SCAN_CACHE_DURATION_MS;
-}
-
 const LOADING_STEP_LABELS = [
   'Firestore: 前回スキャン検索',
   'GitHub API: リポジトリ取得',
@@ -126,6 +120,7 @@ export default function App() {
   const [previousScan, setPreviousScan] = useState<ScanRecord | null>(null);
   const [customAnalysisResult, setCustomAnalysisResult] = useState<AnalysisResult | null>(null);
   const [analysisResultSource, setAnalysisResultSource] = useState<AnalysisResultSource>(null);
+  const [recentEvents, setRecentEvents] = useState<RecentGithubEvent[]>([]);
   const [isUsingAi, setIsUsingAi] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string>('');
@@ -155,15 +150,20 @@ export default function App() {
     const gitNode = nodes.find((node) => node.id === 'git');
     if (!gitNode) return;
 
-    hasCenteredInitialTree.current = true;
-    const width = gitNode.measured?.width ?? gitNode.width ?? 0;
-    const height = gitNode.measured?.height ?? gitNode.height ?? 0;
-    void flowInstance.setCenter(
-      gitNode.position.x + width / 2,
-      gitNode.position.y + height / 2,
-      { zoom: 0.7, duration: 0 },
-    );
-  }, [screen, nodes, flowInstance]);
+    const frame = window.requestAnimationFrame(() => {
+      if (hasCenteredInitialTree.current) return;
+      hasCenteredInitialTree.current = true;
+      const width = gitNode.measured?.width ?? gitNode.width ?? 0;
+      const height = gitNode.measured?.height ?? gitNode.height ?? 0;
+      void flowInstance.setCenter(
+        gitNode.position.x + width / 2,
+        gitNode.position.y + height / 2,
+        { zoom: 0.7, duration: 0 },
+      );
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [screen, nodes.length, flowInstance]);
 
   useEffect(() => {
     if (screen === 'result') {
@@ -201,6 +201,7 @@ export default function App() {
           setGithubUsername(record.username);
           setAvatarUrl(record.avatarUrl);
           setSavedScanId(record.id || scanId);
+          setRecentEvents(record.recentEvents ?? []);
           setCustomAnalysisResult(toAnalysisResult(record));
           
           if (record.previousScanId) {
@@ -235,6 +236,7 @@ export default function App() {
     setPreviousScan(null);
     setCustomAnalysisResult(null);
     setAnalysisResultSource(null);
+    setRecentEvents([]);
   };
 
   // Start analysis
@@ -251,6 +253,7 @@ export default function App() {
     setCustomAnalysisResult(null);
     setPreviousScan(null);
     setAnalysisResultSource(null);
+    setRecentEvents([]);
 
     const mockTemplate = MOCK_REPOS.find(r => r.username === username);
 
@@ -291,22 +294,13 @@ export default function App() {
       }
       setTimingLogs(prev => [...prev, { label: LOADING_STEP_LABELS[0], ms: Math.round(performance.now() - t0) }]);
 
-      if (prevScanRecord && isScanCacheValid(prevScanRecord)) {
-        setAvatarUrl(prevScanRecord.avatarUrl);
-        setSavedScanId(prevScanRecord.id || null);
-        setPreviousScan(null);
-        setCustomAnalysisResult(toAnalysisResult(prevScanRecord));
-        setAnalysisResultSource('cache');
-        setLoadingStep(4);
-        return;
-      }
-
       setLoadingStep(1);
 
       // Step 1: GitHub API
       t0 = performance.now();
       const metadata = await fetchUserMetadata(username, prevScanRecord?.timestamp);
       setAvatarUrl(metadata.avatarUrl);
+      setRecentEvents(metadata.recentEvents);
       setTimingLogs(prev => [...prev, { label: LOADING_STEP_LABELS[1], ms: Math.round(performance.now() - t0) }]);
       setLoadingStep(2);
 
@@ -345,6 +339,10 @@ export default function App() {
       }
       if (metadata.scanWarnings.length > 0) {
         customLogs = [...metadata.scanWarnings, ...customLogs].slice(0, 3);
+      }
+      const recentCommitCount = metadata.recentEvents.reduce((sum, event) => sum + event.commits.length, 0);
+      if (prevScanRecord && recentCommitCount > 0) {
+        customLogs = [`前回スキャン以降の公開コミットを${recentCommitCount}件確認しました。`, ...customLogs].slice(0, 3);
       }
       setTimingLogs(prev => [...prev, { label: LOADING_STEP_LABELS[3], ms: Math.round(performance.now() - t0) }]);
       setLoadingStep(4);
@@ -420,23 +418,6 @@ export default function App() {
       setScreen('result');
       setIsDemoGrowthActive(false);
 
-      saveScan({
-        username: 'chibicode',
-        avatarUrl: 'https://avatars.githubusercontent.com/u/74620?v=4',
-        timestamp: new Date().toLocaleString('ja-JP'),
-        ...currentEvaluation,
-        detectionDebug: currentDebug,
-        growth: currentGrowth,
-        previousScanId: 'baseline-demo-id',
-        customLogs: [
-          '🎉 前回のスキャンから新たに Next.js が導入されました！フロントエンド技術が一段と強化されています。',
-          '🐳 Dockerfileのコミットを検知！インフラノード Docker が新しく解放されました。',
-          'コミット差分により、新たに2つの技術スタックがアンロックされました！素晴らしい成長です！'
-        ]
-      }).then((docId) => {
-        setSavedScanId(docId);
-      });
-
     }, 3100);
   };
 
@@ -489,6 +470,7 @@ export default function App() {
         evaluationVersion: customAnalysisResult.evaluationVersion,
         dataStatus: customAnalysisResult.dataStatus,
         growth: customAnalysisResult.growth,
+        recentEvents,
         acquiredNodeIds,
         recommendedNodeIds,
         unlockedNodeIds,
@@ -501,11 +483,14 @@ export default function App() {
 
       saveScan(scanRecord).then((docId) => {
         setSavedScanId(docId);
+      }).catch((error) => {
+        console.error('Failed to save scan result.', error);
+        setErrorMessage('解析結果は表示できましたが、Firestoreへの履歴保存に失敗しました。');
       });
     }, 800);
 
     return () => clearTimeout(transitionTimer);
-  }, [screen, customAnalysisResult, githubUsername, avatarUrl, previousScan, isDemoGrowthActive, analysisResultSource]);
+  }, [screen, customAnalysisResult, githubUsername, avatarUrl, previousScan, recentEvents, isDemoGrowthActive, analysisResultSource]);
 
   // Sync React Flow nodes & edges
   useEffect(() => {
@@ -669,6 +654,7 @@ export default function App() {
     setPreviousScan(null);
     setCustomAnalysisResult(null);
     setAnalysisResultSource(null);
+    setRecentEvents([]);
     setScreen('input');
   };
 
@@ -957,18 +943,18 @@ export default function App() {
                     {customAnalysisResult ? (previousScan ? 'Growth Delta' : 'Baseline') : 'Mock'}
                   </span>
                 </div>
-                {analysisResultSource && analysisResultSource !== 'fresh' && (
-                  <div className={`mt-3 px-3 py-2.5 rounded-xl border flex items-start gap-2 text-xs ${
-                    analysisResultSource === 'cache'
-                      ? 'bg-cyan-500/10 border-cyan-500/20 text-cyan-100'
-                      : 'bg-amber-500/10 border-amber-500/20 text-amber-100'
-                  }`}>
+                {analysisResultSource === 'fallback' && (
+                  <div className="mt-3 px-3 py-2.5 rounded-xl border flex items-start gap-2 text-xs bg-amber-500/10 border-amber-500/20 text-amber-100">
                     <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                     <p>
-                      {analysisResultSource === 'cache'
-                        ? '10分以内の前回スキャンを表示中です。GitHub API と Gemini API は呼び出していません。'
-                        : 'API の呼び出しに失敗したため、前回スキャンの結果を表示しています。'}
+                      API の呼び出しに失敗したため、前回スキャンの結果を表示しています。
                     </p>
+                  </div>
+                )}
+                {errorMessage && (
+                  <div className="mt-3 flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2.5 text-xs text-red-100">
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <p>{errorMessage}</p>
                   </div>
                 )}
               </div>

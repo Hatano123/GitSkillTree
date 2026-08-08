@@ -32,6 +32,13 @@ export interface GrowthSnapshot {
   leveledUpNodeIds: string[];
 }
 
+export interface RecentGithubEvent {
+  type: string;
+  repoName: string;
+  createdAt: string;
+  commits: string[];
+}
+
 export interface SkillNodeData {
   [key: string]: unknown;
   label: string;
@@ -96,6 +103,7 @@ export interface ScanRecord {
   dataStatus?: 'insufficient' | 'limited' | 'available';
   detectionDebug?: DetectionDebugInfo;
   growth?: GrowthSnapshot;
+  recentEvents?: RecentGithubEvent[];
   acquiredNodeIds: string[];
   recommendedNodeIds: string[];
   unlockedNodeIds: string[];
