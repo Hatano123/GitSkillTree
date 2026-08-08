@@ -81,9 +81,10 @@ export default function SkillNodeDetailPanel({
             type="button"
             onClick={onClose}
             aria-label="閉じる"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-700 bg-slate-900 text-slate-300 transition-colors hover:border-slate-500 hover:bg-slate-800 hover:text-white"
+            className="flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-full border border-slate-700 bg-slate-900 px-3 text-slate-300 transition-colors hover:border-slate-500 hover:bg-slate-800 hover:text-white"
           >
             <X className="h-5 w-5" />
+            <span className="text-xs font-bold">Close</span>
           </button>
         </div>
 
