@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer 
 } from 'recharts';
@@ -136,6 +136,7 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isLegendOpen, setIsLegendOpen] = useState(false);
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance | null>(null);
+  const hasCenteredInitialTree = useRef(false);
 
   // Flow State
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
@@ -146,21 +147,22 @@ export default function App() {
   );
 
   useEffect(() => {
-    if (screen !== 'result' || !flowInstance) return;
+    if (screen !== 'result') {
+      hasCenteredInitialTree.current = false;
+      return;
+    }
+    if (!flowInstance || hasCenteredInitialTree.current) return;
     const gitNode = nodes.find((node) => node.id === 'git');
     if (!gitNode) return;
 
-    const frame = window.requestAnimationFrame(() => {
-      const width = gitNode.measured?.width ?? gitNode.width ?? 0;
-      const height = gitNode.measured?.height ?? gitNode.height ?? 0;
-      void flowInstance.setCenter(
-        gitNode.position.x + width / 2,
-        gitNode.position.y + height / 2,
-        { zoom: 0.7, duration: 0 },
-      );
-    });
-
-    return () => window.cancelAnimationFrame(frame);
+    hasCenteredInitialTree.current = true;
+    const width = gitNode.measured?.width ?? gitNode.width ?? 0;
+    const height = gitNode.measured?.height ?? gitNode.height ?? 0;
+    void flowInstance.setCenter(
+      gitNode.position.x + width / 2,
+      gitNode.position.y + height / 2,
+      { zoom: 0.7, duration: 0 },
+    );
   }, [screen, nodes, flowInstance]);
 
   useEffect(() => {
